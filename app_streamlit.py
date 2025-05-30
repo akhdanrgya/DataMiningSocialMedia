@@ -246,8 +246,6 @@ else:
 
             **Contoh Proses Interpretasi (Ini cuma contoh ya, King!):**
             * Misalnya, kalo di tabel karakteristik, **Cluster 1** nunjukkin nilai rata-rata `Avg_Time_Social_Media_Encoded` yang paling tinggi, `KMeans_Pencarian_Validasi` juga tinggi, tapi `Bothered_By_Worries` sedang-sedang aja. Nah, kita bisa aja ngasih nama ke Cluster 1 ini sebagai segmen *"Pengguna Medsos Berat yang Aktif Mencari Validasi dengan Tingkat Kecemasan Moderat"*.
-
-            Intinya, tabel karakteristik cluster itu adalah **kunci utama** lo buat "ngasih nyawa" dan cerita di balik tiap nomor cluster yang muncul, King Akhdan! Lo yang jadi detektif buat ngebongkar profil tiap segmen itu 🕵️‍♂️.
             """)
             # --- Visualisasi Cluster yang Dimodifikasi ---
             st.markdown("---")
