@@ -402,4 +402,4 @@ else:
 
 
 st.sidebar.markdown("---")
-st.sidebar.caption("Dashboard Analisis oleh King Akhdan (dibantu AI) ✨")
+st.sidebar.caption("Dashboard Analisis oleh Kelompok 6")
