@@ -231,7 +231,24 @@ else:
             st.caption("Fitur 'Avg_Time_Social_Media_Encoded' ordinal; fitur lain skor asli/rata-rata.")
             cluster_characteristics_display = df_kmeans_interpret.groupby('Cluster')[kmeans_feature_names].mean()
             st.dataframe(cluster_characteristics_display.style.highlight_max(axis=0, color='lightgreen').highlight_min(axis=0, color='pink'))
+            st.markdown("---") # Garis pemisah
+            st.subheader("💡 Memahami Label Cluster (0, 1, 2, ...)")
+            st.markdown(f"""
+            Angka-angka seperti **0, 1, 2, ... (sampai {k_optimal_input-1})** yang muncul sebagai label baris di tabel 'Karakteristik Rata-Rata per Cluster' di atas adalah **label** yang diberikan secara otomatis oleh algoritma K-Means. Label ini berfungsi untuk membedakan setiap kelompok (segmen) pengguna yang berhasil diidentifikasi.
 
+            Label angka ini sendiri **tidak memiliki arti khusus secara inheren** (misalnya, Cluster 0 tidak secara otomatis lebih baik atau lebih buruk dari Cluster 1). Makna, "nama", atau "persona" dari tiap cluster baru bisa kita gali dan pahami dengan cara:
+
+            1.  **Menganalisis tabel 'Karakteristik Rata-Rata per Cluster'** yang baru saja ditampilkan di atas dengan cermat.
+            2.  Untuk setiap nomor cluster (misalnya, untuk **Cluster 0**):
+                * Perhatikan nilai rata-rata dari masing-masing fitur yang membentuk cluster tersebut (kolom-kolom di tabel itu: `Avg_Time_Social_Media_Encoded`, `SM_No_Purpose`, `KMeans_Gangguan_Konsentrasi`, `KMeans_Pencarian_Validasi`, dan `Bothered_By_Worries`).
+                * Bandingkan nilai rata-rata fitur di Cluster 0 ini dengan nilai rata-rata di cluster-cluster lainnya (Cluster 1, Cluster 2, dst.). Fitur mana yang nilainya cenderung tinggi di Cluster 0? Fitur mana yang cenderung rendah?
+            3.  Dari **pola unik nilai rata-rata fitur** inilah kita bisa menyimpulkan dan memberikan deskripsi atau "nama" yang lebih bermakna untuk tiap segmen cluster.
+
+            **Contoh Proses Interpretasi (Ini cuma contoh ya, King!):**
+            * Misalnya, kalo di tabel karakteristik, **Cluster 1** nunjukkin nilai rata-rata `Avg_Time_Social_Media_Encoded` yang paling tinggi, `KMeans_Pencarian_Validasi` juga tinggi, tapi `Bothered_By_Worries` sedang-sedang aja. Nah, kita bisa aja ngasih nama ke Cluster 1 ini sebagai segmen *"Pengguna Medsos Berat yang Aktif Mencari Validasi dengan Tingkat Kecemasan Moderat"*.
+
+            Intinya, tabel karakteristik cluster itu adalah **kunci utama** lo buat "ngasih nyawa" dan cerita di balik tiap nomor cluster yang muncul, King Akhdan! Lo yang jadi detektif buat ngebongkar profil tiap segmen itu 🕵️‍♂️.
+            """)
             # --- Visualisasi Cluster yang Dimodifikasi ---
             st.markdown("---")
             st.markdown("#### Visualisasi Cluster")
