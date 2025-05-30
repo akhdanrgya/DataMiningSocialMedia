@@ -244,7 +244,7 @@ else:
                 * Bandingkan nilai rata-rata fitur di Cluster 0 ini dengan nilai rata-rata di cluster-cluster lainnya (Cluster 1, Cluster 2, dst.). Fitur mana yang nilainya cenderung tinggi di Cluster 0? Fitur mana yang cenderung rendah?
             3.  Dari **pola unik nilai rata-rata fitur** inilah kita bisa menyimpulkan dan memberikan deskripsi atau "nama" yang lebih bermakna untuk tiap segmen cluster.
 
-            **Contoh Proses Interpretasi (Ini cuma contoh ya, King!):**
+            **Contoh Proses Interpretasi:**
             * Misalnya, kalo di tabel karakteristik, **Cluster 1** nunjukkin nilai rata-rata `Avg_Time_Social_Media_Encoded` yang paling tinggi, `KMeans_Pencarian_Validasi` juga tinggi, tapi `Bothered_By_Worries` sedang-sedang aja. Nah, kita bisa aja ngasih nama ke Cluster 1 ini sebagai segmen *"Pengguna Medsos Berat yang Aktif Mencari Validasi dengan Tingkat Kecemasan Moderat"*.
             """)
             # --- Visualisasi Cluster yang Dimodifikasi ---
