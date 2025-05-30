@@ -10,6 +10,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -99,7 +100,7 @@ def preprocess_for_rf(df_input, depression_threshold, sleep_threshold):
         return None, None, None, None, None
 
 
-@st.cache_resource # Cache model yang sudah dilatih
+@st.cache_resource(hash_funcs={ColumnTransformer: lambda x: id(x)})
 def get_trained_rf_model(X_full_train, y_full_train, preprocessor, model_name_for_log="Model"):
     """Melatih dan mengembalikan pipeline model Random Forest."""
     if y_full_train.nunique() < 2:
@@ -184,28 +185,103 @@ else:
 
     # --- Tab 2: K-Means Clustering ---
     with tab_kmeans:
-        # (Isi tab K-Means Clustering sama seperti sebelumnya - tidak gue tulis ulang)
         st.header("Segmentasi Pengguna dengan K-Means Clustering")
-        st.markdown("Mengelompokkan responden berdasarkan pola kebiasaan penggunaan media sosial dan gejala kesehatan mental. Gunakan **input K** di sidebar.")
+        st.markdown("""
+        Mengelompokkan responden berdasarkan pola kebiasaan penggunaan media sosial dan gejala kesehatan mental.
+        Gunakan **input K** di sidebar untuk memilih jumlah cluster setelah melihat Elbow Plot.
+        """)
+
+        # Asumsikan df_raw sudah di-load dan k_optimal_input dari sidebar sudah ada
         kmeans_scaled_data, kmeans_feature_names, df_kmeans_original_features = preprocess_for_kmeans(df_raw.copy())
+
         if kmeans_scaled_data is not None:
             col_elbow, col_k_info = st.columns([2,1])
             with col_elbow:
                 st.subheader("Elbow Method untuk Menentukan K Optimal")
-                inertia = []; K_range = range(1, 11)
-                for k_val_loop in K_range: kmeans_model_elbow = KMeans(n_clusters=k_val_loop, random_state=42, n_init='auto'); kmeans_model_elbow.fit(kmeans_scaled_data); inertia.append(kmeans_model_elbow.inertia_)
-                fig_elbow, ax_elbow = plt.subplots(); ax_elbow.plot(K_range, inertia, marker='o', linestyle='--'); ax_elbow.set_xlabel('Jumlah Cluster (K)'); ax_elbow.set_ylabel('Inertia'); ax_elbow.set_xticks(K_range); ax_elbow.grid(True); st.pyplot(fig_elbow)
-            with col_k_info: st.info(f"Anda memilih **K = {k_optimal_input}** cluster (lihat sidebar)."); st.markdown("Perhatikan 'siku' pada plot Elbow.")
-            st.markdown("---"); st.subheader(f"Hasil K-Means Clustering (K={k_optimal_input})")
-            final_kmeans_model = KMeans(n_clusters=k_optimal_input, random_state=42, n_init='auto'); cluster_labels = final_kmeans_model.fit_predict(kmeans_scaled_data)
-            df_kmeans_interpret = df_kmeans_original_features.copy(); df_kmeans_interpret['Cluster'] = cluster_labels
-            st.markdown("##### Karakteristik Rata-Rata per Cluster"); st.caption("Fitur 'Avg_Time_Social_Media_Encoded' ordinal; fitur lain skor asli/rata-rata.")
+                inertia = []
+                K_range = range(1, 11)
+                for k_val_loop in K_range:
+                    kmeans_model_elbow = KMeans(n_clusters=k_val_loop, random_state=42, n_init='auto')
+                    kmeans_model_elbow.fit(kmeans_scaled_data)
+                    inertia.append(kmeans_model_elbow.inertia_)
+                fig_elbow, ax_elbow = plt.subplots()
+                ax_elbow.plot(K_range, inertia, marker='o', linestyle='--')
+                ax_elbow.set_xlabel('Jumlah Cluster (K)')
+                ax_elbow.set_ylabel('Inertia')
+                ax_elbow.set_xticks(K_range)
+                ax_elbow.grid(True)
+                st.pyplot(fig_elbow)
+            with col_k_info:
+                st.info(f"Anda memilih **K = {k_optimal_input}** cluster (lihat sidebar).")
+                st.markdown("Perhatikan 'siku' pada plot Elbow di sebelah untuk menentukan nilai K yang paling sesuai.")
+
+            st.markdown("---")
+            st.subheader(f"Hasil K-Means Clustering (K={k_optimal_input})")
+            
+            final_kmeans_model = KMeans(n_clusters=k_optimal_input, random_state=42, n_init='auto')
+            cluster_labels = final_kmeans_model.fit_predict(kmeans_scaled_data)
+            
+            # Dapatkan centroid dalam_scaled_data space
+            centroids_scaled = final_kmeans_model.cluster_centers_
+            
+            df_kmeans_interpret = df_kmeans_original_features.copy()
+            df_kmeans_interpret['Cluster'] = cluster_labels
+            
+            st.markdown("##### Karakteristik Rata-Rata per Cluster")
+            st.caption("Fitur 'Avg_Time_Social_Media_Encoded' ordinal; fitur lain skor asli/rata-rata.")
             cluster_characteristics_display = df_kmeans_interpret.groupby('Cluster')[kmeans_feature_names].mean()
             st.dataframe(cluster_characteristics_display.style.highlight_max(axis=0, color='lightgreen').highlight_min(axis=0, color='pink'))
+
+            # --- Visualisasi Cluster yang Dimodifikasi ---
+            st.markdown("---")
+            st.markdown("#### Visualisasi Cluster")
+
+            # Visualisasi 1: Scatter plot 2 Fitur Pertama dengan Centroid
             if len(kmeans_feature_names) >= 2:
-                with st.expander("Lihat Visualisasi Cluster Sederhana (2 Fitur Utama Hasil Scaling)"):
-                    fig_cluster_scatter, ax_cluster_scatter = plt.subplots(figsize=(10,6)); sns.scatterplot(x=kmeans_scaled_data[:, 0], y=kmeans_scaled_data[:, 1], hue=cluster_labels, palette=sns.color_palette("viridis", n_colors=k_optimal_input), ax=ax_cluster_scatter, s=100, alpha=0.7); ax_cluster_scatter.set_xlabel(f"Scaled: {kmeans_feature_names[0]}"); ax_cluster_scatter.set_ylabel(f"Scaled: {kmeans_feature_names[1]}"); ax_cluster_scatter.set_title(f"Visualisasi Cluster K-Means (K={k_optimal_input})"); plt.legend(title='Cluster'); st.pyplot(fig_cluster_scatter)
-        else: st.warning("Data K-Means tidak dapat diproses.")
+                st.markdown("##### Plot Scatter: 2 Fitur Awal (Scaled) dengan Centroid")
+                fig_scatter_basic, ax_scatter_basic = plt.subplots(figsize=(10,6))
+                # Plot data points
+                sns.scatterplot(
+                    x=kmeans_scaled_data[:, 0], y=kmeans_scaled_data[:, 1], hue=cluster_labels,
+                    palette=sns.color_palette("viridis", n_colors=k_optimal_input), ax=ax_scatter_basic, s=70, alpha=0.7, legend='full')
+                # Plot centroids
+                ax_scatter_basic.scatter(
+                    centroids_scaled[:, 0], centroids_scaled[:, 1],
+                    marker='X', s=200, color='red', edgecolors='black', label='Centroids')
+                
+                ax_scatter_basic.set_xlabel(f"Scaled: {kmeans_feature_names[0]}")
+                ax_scatter_basic.set_ylabel(f"Scaled: {kmeans_feature_names[1]}")
+                ax_cluster_scatter_title = f"Cluster K-Means (K={k_optimal_input}) - Fitur: '{kmeans_feature_names[0]}' vs '{kmeans_feature_names[1]}'"
+                ax_scatter_basic.set_title(ax_cluster_scatter_title)
+                ax_scatter_basic.legend()
+                st.pyplot(fig_scatter_basic)
+
+            # Visualisasi 2: Scatter plot dengan PCA (jika dipilih)
+            if st.checkbox("Tampilkan Visualisasi Cluster dengan PCA (2 Komponen)", value=False):
+                st.markdown("##### Plot Scatter: Hasil Reduksi Dimensi dengan PCA (2 Komponen Utama)")
+                try:
+                    pca = PCA(n_components=2, random_state=42)
+                    pca_components = pca.fit_transform(kmeans_scaled_data)
+                    pca_centroids = pca.transform(centroids_scaled) # Transformasi centroid juga
+
+                    fig_pca, ax_pca = plt.subplots(figsize=(10, 6))
+                    sns.scatterplot(
+                        x=pca_components[:, 0], y=pca_components[:, 1], hue=cluster_labels,
+                        palette=sns.color_palette("viridis", n_colors=k_optimal_input), ax=ax_pca, s=70, alpha=0.7, legend='full')
+                    ax_pca.scatter(
+                        pca_centroids[:, 0], pca_centroids[:, 1],
+                        marker='X', s=200, color='red', edgecolors='black', label='Centroids')
+                    
+                    ax_pca.set_xlabel(f"Principal Component 1 ({pca.explained_variance_ratio_[0]*100:.1f}% variance)")
+                    ax_pca.set_ylabel(f"Principal Component 2 ({pca.explained_variance_ratio_[1]*100:.1f}% variance)")
+                    ax_pca.set_title(f"Visualisasi Cluster K-Means (K={k_optimal_input}) dengan PCA")
+                    ax_pca.legend()
+                    st.pyplot(fig_pca)
+                    st.caption(f"Total varians yang dijelaskan oleh 2 Komponen Utama: {pca.explained_variance_ratio_.sum()*100:.1f}%")
+                except Exception as e_pca:
+                    st.error(f"Gagal membuat visualisasi PCA: {e_pca}")
+        else:
+            st.warning("Data untuk K-Means tidak dapat diproses.")
 
 
     # --- Tab 3: Random Forest (Evaluasi Model) ---
