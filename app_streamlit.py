@@ -230,8 +230,10 @@ else:
                 try:
                     model_pipeline_eval.fit(X_train, y_train); y_pred_eval = model_pipeline_eval.predict(X_test)
                     col_rf_metric, col_rf_cm = st.columns([1, 1])
-                    with col_rf_metric: st.metric(label=f"Akurasi Model {target_name_eval}", value=f"{accuracy_score(y_test, y_pred_eval):.2%}"); 
-                                        with st.expander("Laporan Klasifikasi Lengkap"): st.text(classification_report(y_test, y_pred_eval, zero_division=0))
+                    with col_rf_metric: 
+                        st.metric(label=f"Akurasi Model {target_name_eval}", value=f"{accuracy_score(y_test, y_pred_eval):.2%}"); 
+                        with st.expander("Laporan Klasifikasi Lengkap"):
+                                            st.text(classification_report(y_test, y_pred_eval, zero_division=0))
                     with col_rf_cm: 
                         fig_cm_rf, ax_cm_rf = plt.subplots(); cm_rf = confusion_matrix(y_test, y_pred_eval); sns.heatmap(cm_rf, annot=True, fmt='d', cmap='Blues' if "Depresi" in target_name_eval else 'Greens', ax=ax_cm_rf, xticklabels=model_pipeline_eval.classes_, yticklabels=model_pipeline_eval.classes_); ax_cm_rf.set_title(f'CM - {target_name_eval}'); ax_cm_rf.set_xlabel('Prediksi'); ax_cm_rf.set_ylabel('Aktual'); st.pyplot(fig_cm_rf)
                 except ValueError as ve_rf: st.error(f"ValueError model {target_name_eval}: {ve_rf}")
