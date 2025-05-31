@@ -283,12 +283,6 @@ else:
                     st.markdown("---")
             # --- AKHIR BAGIAN PERSONA OTOMATIS ---
             
-            st.markdown("---") # Garis pemisah dari penjelasan manual
-            st.subheader("💡 Memahami Label Cluster (0, 1, 2, ...)") # Penjelasan manual tetap ada
-            st.markdown(f"""
-            Angka-angka seperti **0, 1, 2, ... (sampai {k_optimal_input-1})** yang muncul sebagai label baris di tabel 'Karakteristik Rata-Rata per Cluster' di atas adalah **label** yang diberikan secara otomatis oleh algoritma K-Means. Label ini berfungsi untuk membedakan setiap kelompok (segmen) pengguna yang berhasil diidentifikasi... (lanjutan penjelasan seperti sebelumnya)
-            """)
-            
             st.markdown("---"); st.markdown("#### Visualisasi Cluster")
             if len(kmeans_feature_names) >= 2:
                 st.markdown("##### Plot Scatter: 2 Fitur Awal (Scaled) dengan Centroid")
