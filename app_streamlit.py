@@ -1,4 +1,4 @@
-# app_dashboard_with_prediction.py
+# app_streamlit_with_auto_persona.py
 
 import streamlit as st
 import pandas as pd
@@ -10,7 +10,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA # Pastikan ini di-import
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -18,7 +18,6 @@ import seaborn as sns
 st.set_page_config(page_title="Dashboard Analisis Mental Health & Sosmed", layout="wide")
 
 # --- Fungsi-Fungsi Pembantu ---
-# (Salin fungsi load_and_preprocess_data, preprocess_for_kmeans, preprocess_for_rf dari kode dashboard sebelumnya)
 @st.cache_data
 def load_and_preprocess_data(file_path='smmh.csv'):
     try:
@@ -89,34 +88,28 @@ def preprocess_for_rf(df_input, depression_threshold, sleep_threshold):
         missing_cols_X = [col for col in kolom_fitur_rf_gabungan if col not in df_input.columns]
         if missing_cols_X:
             st.error(f"Kolom fitur RF hilang: {missing_cols_X}")
-            return None, None, None, None, None # Return 5 Nones if kolom_fitur_rf_gabungan is also expected
+            return None, None, None, None, None 
         X = df_input[kolom_fitur_rf_gabungan]
         y_depresi = df_input['Target_Depresi']
         y_tidur = df_input['Target_Gangguan_Tidur']
-        # Mengembalikan juga kolom_fitur_rf_gabungan untuk konsistensi input form prediksi
         return X, y_depresi, y_tidur, preprocessor_rf, kolom_fitur_rf_gabungan
     except Exception as e:
         st.error(f"Error RF preprocessing: {e}")
         return None, None, None, None, None
 
-
 @st.cache_resource(hash_funcs={ColumnTransformer: lambda x: id(x)})
 def get_trained_rf_model(X_full_train, y_full_train, preprocessor, model_name_for_log="Model"):
-    """Melatih dan mengembalikan pipeline model Random Forest."""
     if y_full_train.nunique() < 2:
         st.warning(f"Target untuk '{model_name_for_log}' hanya memiliki satu kelas. Model tidak dapat dilatih.")
         return None
     if X_full_train.empty:
         st.warning(f"Data fitur untuk '{model_name_for_log}' kosong. Model tidak dapat dilatih.")
         return None
-        
-    # Kita tidak melakukan train-test split di sini karena ini untuk model final yang akan dipakai prediksi
-    # Train-test split hanya untuk evaluasi yang ditampilkan di tab RF
     pipeline = Pipeline(steps=[('preprocessor', preprocessor),
                                ('classifier', RandomForestClassifier(random_state=42, n_estimators=100, class_weight='balanced'))])
     try:
         pipeline.fit(X_full_train, y_full_train)
-        st.success(f"Model untuk '{model_name_for_log}' berhasil dilatih (atau diambil dari cache).")
+        # st.success(f"Model untuk '{model_name_for_log}' berhasil dilatih (atau diambil dari cache).") # Aktifkan untuk debug cache
         return pipeline
     except ValueError as ve:
         st.error(f"ValueError saat melatih model '{model_name_for_log}': {ve}")
@@ -124,6 +117,81 @@ def get_trained_rf_model(X_full_train, y_full_train, preprocessor, model_name_fo
     except Exception as e:
         st.error(f"Error umum saat melatih model '{model_name_for_log}': {e}")
         return None
+
+# --- FUNGSI BARU UNTUK PERSONA OTOMATIS ---
+def interpretasi_nilai_fitur(nama_fitur, nilai):
+    """Helper function untuk mengkategorikan nilai fitur jadi Rendah, Sedang, Tinggi."""
+    if nama_fitur == 'Avg_Time_Social_Media_Encoded': 
+        if nilai <= 1.5: return "Rendah (Jarang/Singkat)"
+        elif nilai <= 3.0: return "Sedang"
+        else: return "Tinggi (Sering/Lama)"
+    elif nama_fitur in ['SM_No_Purpose', 'KMeans_Gangguan_Konsentrasi', 'KMeans_Pencarian_Validasi', 'Bothered_By_Worries']:
+        if nilai <= 2.3: return "Rendah"
+        elif nilai <= 3.7: return "Sedang"
+        else: return "Tinggi"
+    return f"{nilai:.2f}" 
+
+def buat_nama_persona_otomatis(df_karakteristik_cluster, k_optimal):
+    personas = []
+    fitur_kunci = ['Avg_Time_Social_Media_Encoded', 'SM_No_Purpose', 
+                   'KMeans_Gangguan_Konsentrasi', 'KMeans_Pencarian_Validasi', 'Bothered_By_Worries']
+
+    for i in range(k_optimal):
+        if i not in df_karakteristik_cluster.index:
+            personas.append({"nama_persona": f"Cluster {i}", "ciri_khas": "Data karakteristik tidak tersedia.", "interpretasi_singkat": ""})
+            continue
+
+        cluster_data = df_karakteristik_cluster.loc[i]
+        
+        # Mengambil nilai dengan aman, antisipasi jika ada fitur yang hilang
+        waktu_medsos_val = cluster_data.get('Avg_Time_Social_Media_Encoded', 0) # default 0 jika hilang
+        tanpa_tujuan_val = cluster_data.get('SM_No_Purpose', 0)
+        gangguan_fokus_val = cluster_data.get('KMeans_Gangguan_Konsentrasi', 0)
+        cari_validasi_val = cluster_data.get('KMeans_Pencarian_Validasi', 0)
+        cemas_val = cluster_data.get('Bothered_By_Worries', 0)
+
+        waktu_medsos = interpretasi_nilai_fitur('Avg_Time_Social_Media_Encoded', waktu_medsos_val)
+        tanpa_tujuan = interpretasi_nilai_fitur('SM_No_Purpose', tanpa_tujuan_val)
+        gangguan_fokus = interpretasi_nilai_fitur('KMeans_Gangguan_Konsentrasi', gangguan_fokus_val)
+        cari_validasi = interpretasi_nilai_fitur('KMeans_Pencarian_Validasi', cari_validasi_val)
+        cemas = interpretasi_nilai_fitur('Bothered_By_Worries', cemas_val)
+        
+        nama_persona = f"Cluster {i}: Tipe Pengguna Default"
+        interpretasi_singkat = "Profil umum, perlu analisis lebih detail dengan melihat ciri khas."
+
+        # Contoh Aturan (Sangat Sederhana, perlu banyak if/elif atau logika lebih canggih)
+        if "Tinggi" in waktu_medsos and "Tinggi" in gangguan_fokus and "Tinggi" in cemas:
+            nama_persona = f"Cluster {i}: 📱⚡️ Si Aktif Gelisah (Otomatis)"
+            interpretasi_singkat = "Cenderung sangat aktif di medsos, namun juga mengalami gangguan fokus dan kecemasan tinggi."
+        elif "Rendah" in waktu_medsos and "Rendah" in gangguan_fokus and "Rendah" in cemas and "Rendah" in cari_validasi:
+            nama_persona = f"Cluster {i}: 🧘💻 Si Bijak Medsos (Otomatis)"
+            interpretasi_singkat = "Penggunaan medsos terkontrol dengan dampak minimal pada fokus, validasi, dan kecemasan."
+        elif "Tinggi" in cari_validasi and ("Sedang" in waktu_medsos or "Tinggi" in waktu_medsos):
+             nama_persona = f"Cluster {i}: 👍🤳 Si Pencari Pengakuan (Otomatis)"
+             interpretasi_singkat = "Fokus utama pada pencarian validasi di media sosial, dengan tingkat aktivitas medsos sedang hingga tinggi."
+        elif "Tinggi" in waktu_medsos and "Tinggi" in gangguan_fokus:
+            nama_persona = f"Cluster {i}: 🌪️😵 Si Terdistraksi Berat (Otomatis)"
+            interpretasi_singkat = "Pengguna berat media sosial yang sangat mudah terganggu konsentrasinya."
+        elif "Rendah" in waktu_medsos and "Rendah" in gangguan_fokus and "Tinggi" in cemas :
+            nama_persona = f"Cluster {i}: 😟🌿 Si Cemas Meski Jarang Medsos (Otomatis)"
+            interpretasi_singkat = "Meskipun jarang menggunakan medsos dan fokusnya baik, tingkat kecemasannya tinggi."
+
+
+        ciri_khas_list = [
+            f"Waktu di Medsos: **{waktu_medsos}** (skor encode: {waktu_medsos_val:.2f})",
+            f"Medsos Tanpa Tujuan: **{tanpa_tujuan}** (skor: {tanpa_tujuan_val:.2f})",
+            f"Gangguan Konsentrasi: **{gangguan_fokus}** (skor: {gangguan_fokus_val:.2f})",
+            f"Pencarian Validasi: **{cari_validasi}** (skor: {cari_validasi_val:.2f})",
+            f"Tingkat Kecemasan: **{cemas}** (skor: {cemas_val:.2f})"
+        ]
+        
+        personas.append({
+            "nama_persona": nama_persona,
+            "ciri_khas": "\n".join([f"- {c}" for c in ciri_khas_list]),
+            "interpretasi_singkat": interpretasi_singkat
+        })
+    return personas
+
 
 # --- Judul Aplikasi ---
 st.title("📊 Dashboard Analisis: Media Sosial & Kesehatan Mental")
@@ -143,24 +211,19 @@ if df_raw is None:
     st.error(f"Gagal memuat data dari '{DATA_FILE_PATH}'. Aplikasi tidak dapat melanjutkan.")
     st.stop()
 else:
-    # Preprocessing RF dilakukan sekali di sini agar X, y, preprocessor, dan nama kolom fitur tersedia global
     X_rf_features, y_rf_depresi, y_rf_tidur, preprocessor_rf_obj, rf_feature_names_list = preprocess_for_rf(
         df_raw.copy(), depression_threshold_input, sleep_threshold_input
     )
 
-    # --- Membuat Tabs untuk Navigasi ---
     tab_list = [
         "🔍 **Ringkasan Data**",
         "🧩 **K-Means Clustering**",
         "🌳 **Random Forest** (Evaluasi Model)",
-        "🔮 **Coba Prediksi Sendiri**" # Tab baru
+        "🔮 **Coba Prediksi Sendiri**"
     ]
     tab_overview, tab_kmeans, tab_rf_eval, tab_prediction = st.tabs(tab_list)
 
-
-    # --- Tab 1: Ringkasan Data ---
     with tab_overview:
-        # (Isi tab Ringkasan Data sama seperti sebelumnya - tidak gue tulis ulang)
         st.header("Ringkasan Data Awal")
         st.markdown(f"Data dimuat dari `{DATA_FILE_PATH}`.")
         col1_ov, col2_ov = st.columns(2)
@@ -182,136 +245,68 @@ else:
                 if 'Avg_Time_Social_Media' in df_raw.columns:
                     fig_time, ax_time = plt.subplots(); df_raw['Avg_Time_Social_Media'].value_counts(ascending=True).plot(kind='barh', ax=ax_time); ax_time.set_title("Waktu Rata-rata di Media Sosial"); st.pyplot(fig_time)
 
-
-    # --- Tab 2: K-Means Clustering ---
     with tab_kmeans:
         st.header("Segmentasi Pengguna dengan K-Means Clustering")
-        st.markdown("""
-        Mengelompokkan responden berdasarkan pola kebiasaan penggunaan media sosial dan gejala kesehatan mental.
-        Gunakan **input K** di sidebar untuk memilih jumlah cluster setelah melihat Elbow Plot.
-        """)
-
-        # Asumsikan df_raw sudah di-load dan k_optimal_input dari sidebar sudah ada
+        st.markdown("Mengelompokkan responden berdasarkan pola kebiasaan penggunaan media sosial dan gejala kesehatan mental. Gunakan **input K** di sidebar.")
         kmeans_scaled_data, kmeans_feature_names, df_kmeans_original_features = preprocess_for_kmeans(df_raw.copy())
-
-        if kmeans_scaled_data is not None:
+        
+        if kmeans_scaled_data is not None and kmeans_feature_names is not None and df_kmeans_original_features is not None : # Penambahan Cek
             col_elbow, col_k_info = st.columns([2,1])
             with col_elbow:
                 st.subheader("Elbow Method untuk Menentukan K Optimal")
-                inertia = []
-                K_range = range(1, 11)
-                for k_val_loop in K_range:
-                    kmeans_model_elbow = KMeans(n_clusters=k_val_loop, random_state=42, n_init='auto')
-                    kmeans_model_elbow.fit(kmeans_scaled_data)
-                    inertia.append(kmeans_model_elbow.inertia_)
-                fig_elbow, ax_elbow = plt.subplots()
-                ax_elbow.plot(K_range, inertia, marker='o', linestyle='--')
-                ax_elbow.set_xlabel('Jumlah Cluster (K)')
-                ax_elbow.set_ylabel('Inertia')
-                ax_elbow.set_xticks(K_range)
-                ax_elbow.grid(True)
-                st.pyplot(fig_elbow)
-            with col_k_info:
-                st.info(f"Anda memilih **K = {k_optimal_input}** cluster (lihat sidebar).")
-                st.markdown("Perhatikan 'siku' pada plot Elbow di sebelah untuk menentukan nilai K yang paling sesuai.")
-
-            st.markdown("---")
-            st.subheader(f"Hasil K-Means Clustering (K={k_optimal_input})")
+                inertia = []; K_range = range(1, 11)
+                for k_val_loop in K_range: kmeans_model_elbow = KMeans(n_clusters=k_val_loop, random_state=42, n_init='auto'); kmeans_model_elbow.fit(kmeans_scaled_data); inertia.append(kmeans_model_elbow.inertia_)
+                fig_elbow, ax_elbow = plt.subplots(); ax_elbow.plot(K_range, inertia, marker='o', linestyle='--'); ax_elbow.set_xlabel('Jumlah Cluster (K)'); ax_elbow.set_ylabel('Inertia'); ax_elbow.set_xticks(K_range); ax_elbow.grid(True); st.pyplot(fig_elbow)
+            with col_k_info: st.info(f"Anda memilih **K = {k_optimal_input}** cluster (lihat sidebar)."); st.markdown("Perhatikan 'siku' pada plot Elbow.")
             
-            final_kmeans_model = KMeans(n_clusters=k_optimal_input, random_state=42, n_init='auto')
-            cluster_labels = final_kmeans_model.fit_predict(kmeans_scaled_data)
-            
-            # Dapatkan centroid dalam_scaled_data space
+            st.markdown("---"); st.subheader(f"Hasil K-Means Clustering (K={k_optimal_input})")
+            final_kmeans_model = KMeans(n_clusters=k_optimal_input, random_state=42, n_init='auto'); cluster_labels = final_kmeans_model.fit_predict(kmeans_scaled_data)
             centroids_scaled = final_kmeans_model.cluster_centers_
+            df_kmeans_interpret = df_kmeans_original_features.copy(); df_kmeans_interpret['Cluster'] = cluster_labels
             
-            df_kmeans_interpret = df_kmeans_original_features.copy()
-            df_kmeans_interpret['Cluster'] = cluster_labels
-            
-            st.markdown("##### Karakteristik Rata-Rata per Cluster")
-            st.caption("Fitur 'Avg_Time_Social_Media_Encoded' ordinal; fitur lain skor asli/rata-rata.")
+            st.markdown("##### Karakteristik Rata-Rata per Cluster"); st.caption("Fitur 'Avg_Time_Social_Media_Encoded' ordinal; fitur lain skor asli/rata-rata.")
             cluster_characteristics_display = df_kmeans_interpret.groupby('Cluster')[kmeans_feature_names].mean()
             st.dataframe(cluster_characteristics_display.style.highlight_max(axis=0, color='lightgreen').highlight_min(axis=0, color='pink'))
-            st.markdown("---") # Garis pemisah
-            st.subheader("💡 Memahami Label Cluster (0, 1, 2, ...)")
+
+            # --- PENAMBAHAN BAGIAN PERSONA OTOMATIS ---
+            if not cluster_characteristics_display.empty:
+                st.markdown("---")
+                st.subheader("🤖 Saran Persona Otomatis untuk Tiap Cluster")
+                st.caption("Nama dan interpretasi di bawah ini dibuat otomatis berdasarkan aturan sederhana. Interpretasi manual Anda tetap yang utama!")
+                saran_personas = buat_nama_persona_otomatis(cluster_characteristics_display, k_optimal_input)
+                for persona_info in saran_personas:
+                    st.markdown(f"#### {persona_info['nama_persona']}")
+                    st.markdown("**Ciri Khas Utama (berdasarkan nilai rata-rata fitur K-Means):**")
+                    st.markdown(persona_info['ciri_khas'])
+                    st.markdown("**Interpretasi Singkat (Saran Otomatis):**")
+                    st.markdown(f"> _{persona_info['interpretasi_singkat']}_")
+                    st.markdown("---")
+            # --- AKHIR BAGIAN PERSONA OTOMATIS ---
+            
+            st.markdown("---") # Garis pemisah dari penjelasan manual
+            st.subheader("💡 Memahami Label Cluster (0, 1, 2, ...)") # Penjelasan manual tetap ada
             st.markdown(f"""
-            Angka-angka seperti **0, 1, 2, ... (sampai {k_optimal_input-1})** yang muncul sebagai label baris di tabel 'Karakteristik Rata-Rata per Cluster' di atas adalah **label** yang diberikan secara otomatis oleh algoritma K-Means. Label ini berfungsi untuk membedakan setiap kelompok (segmen) pengguna yang berhasil diidentifikasi.
-
-            Label angka ini sendiri **tidak memiliki arti khusus secara inheren** (misalnya, Cluster 0 tidak secara otomatis lebih baik atau lebih buruk dari Cluster 1). Makna, "nama", atau "persona" dari tiap cluster baru bisa kita gali dan pahami dengan cara:
-
-            1.  **Menganalisis tabel 'Karakteristik Rata-Rata per Cluster'** yang baru saja ditampilkan di atas dengan cermat.
-            2.  Untuk setiap nomor cluster (misalnya, untuk **Cluster 0**):
-                * Perhatikan nilai rata-rata dari masing-masing fitur yang membentuk cluster tersebut (kolom-kolom di tabel itu: `Avg_Time_Social_Media_Encoded`, `SM_No_Purpose`, `KMeans_Gangguan_Konsentrasi`, `KMeans_Pencarian_Validasi`, dan `Bothered_By_Worries`).
-                * Bandingkan nilai rata-rata fitur di Cluster 0 ini dengan nilai rata-rata di cluster-cluster lainnya (Cluster 1, Cluster 2, dst.). Fitur mana yang nilainya cenderung tinggi di Cluster 0? Fitur mana yang cenderung rendah?
-            3.  Dari **pola unik nilai rata-rata fitur** inilah kita bisa menyimpulkan dan memberikan deskripsi atau "nama" yang lebih bermakna untuk tiap segmen cluster.
-
-            **Contoh Proses Interpretasi:**
-            * Misalnya, kalo di tabel karakteristik, **Cluster 1** nunjukkin nilai rata-rata `Avg_Time_Social_Media_Encoded` yang paling tinggi, `KMeans_Pencarian_Validasi` juga tinggi, tapi `Bothered_By_Worries` sedang-sedang aja. Nah, kita bisa aja ngasih nama ke Cluster 1 ini sebagai segmen *"Pengguna Medsos Berat yang Aktif Mencari Validasi dengan Tingkat Kecemasan Moderat"*.
+            Angka-angka seperti **0, 1, 2, ... (sampai {k_optimal_input-1})** yang muncul sebagai label baris di tabel 'Karakteristik Rata-Rata per Cluster' di atas adalah **label** yang diberikan secara otomatis oleh algoritma K-Means. Label ini berfungsi untuk membedakan setiap kelompok (segmen) pengguna yang berhasil diidentifikasi... (lanjutan penjelasan seperti sebelumnya)
             """)
-            # --- Visualisasi Cluster yang Dimodifikasi ---
-            st.markdown("---")
-            st.markdown("#### Visualisasi Cluster")
-
-            # Visualisasi 1: Scatter plot 2 Fitur Pertama dengan Centroid
+            
+            st.markdown("---"); st.markdown("#### Visualisasi Cluster")
             if len(kmeans_feature_names) >= 2:
                 st.markdown("##### Plot Scatter: 2 Fitur Awal (Scaled) dengan Centroid")
-                fig_scatter_basic, ax_scatter_basic = plt.subplots(figsize=(10,6))
-                # Plot data points
-                sns.scatterplot(
-                    x=kmeans_scaled_data[:, 0], y=kmeans_scaled_data[:, 1], hue=cluster_labels,
-                    palette=sns.color_palette("viridis", n_colors=k_optimal_input), ax=ax_scatter_basic, s=70, alpha=0.7, legend='full')
-                # Plot centroids
-                ax_scatter_basic.scatter(
-                    centroids_scaled[:, 0], centroids_scaled[:, 1],
-                    marker='X', s=200, color='red', edgecolors='black', label='Centroids')
-                
-                ax_scatter_basic.set_xlabel(f"Scaled: {kmeans_feature_names[0]}")
-                ax_scatter_basic.set_ylabel(f"Scaled: {kmeans_feature_names[1]}")
-                ax_cluster_scatter_title = f"Cluster K-Means (K={k_optimal_input}) - Fitur: '{kmeans_feature_names[0]}' vs '{kmeans_feature_names[1]}'"
-                ax_scatter_basic.set_title(ax_cluster_scatter_title)
-                ax_scatter_basic.legend()
-                st.pyplot(fig_scatter_basic)
-
-            # Visualisasi 2: Scatter plot dengan PCA (jika dipilih)
+                fig_scatter_basic, ax_scatter_basic = plt.subplots(figsize=(10,6)); sns.scatterplot(x=kmeans_scaled_data[:, 0], y=kmeans_scaled_data[:, 1], hue=cluster_labels, palette=sns.color_palette("viridis", n_colors=k_optimal_input), ax=ax_scatter_basic, s=70, alpha=0.7, legend='full'); ax_scatter_basic.scatter(centroids_scaled[:, 0], centroids_scaled[:, 1], marker='X', s=200, color='red', edgecolors='black', label='Centroids'); ax_scatter_basic.set_xlabel(f"Scaled: {kmeans_feature_names[0]}"); ax_scatter_basic.set_ylabel(f"Scaled: {kmeans_feature_names[1]}"); ax_cluster_scatter_title = f"Cluster K-Means (K={k_optimal_input}) - Fitur: '{kmeans_feature_names[0]}' vs '{kmeans_feature_names[1]}'"; ax_scatter_basic.set_title(ax_cluster_scatter_title); ax_scatter_basic.legend(); st.pyplot(fig_scatter_basic)
             if st.checkbox("Tampilkan Visualisasi Cluster dengan PCA (2 Komponen)", value=False):
                 st.markdown("##### Plot Scatter: Hasil Reduksi Dimensi dengan PCA (2 Komponen Utama)")
                 try:
-                    pca = PCA(n_components=2, random_state=42)
-                    pca_components = pca.fit_transform(kmeans_scaled_data)
-                    pca_centroids = pca.transform(centroids_scaled) # Transformasi centroid juga
+                    pca = PCA(n_components=2, random_state=42); pca_components = pca.fit_transform(kmeans_scaled_data); pca_centroids = pca.transform(centroids_scaled)
+                    fig_pca, ax_pca = plt.subplots(figsize=(10, 6)); sns.scatterplot(x=pca_components[:, 0], y=pca_components[:, 1], hue=cluster_labels, palette=sns.color_palette("viridis", n_colors=k_optimal_input), ax=ax_pca, s=70, alpha=0.7, legend='full'); ax_pca.scatter(pca_centroids[:, 0], pca_centroids[:, 1], marker='X', s=200, color='red', edgecolors='black', label='Centroids'); ax_pca.set_xlabel(f"PC 1 ({pca.explained_variance_ratio_[0]*100:.1f}% var)"); ax_pca.set_ylabel(f"PC 2 ({pca.explained_variance_ratio_[1]*100:.1f}% var)"); ax_pca.set_title(f"Visualisasi Cluster K-Means (K={k_optimal_input}) dengan PCA"); ax_pca.legend(); st.pyplot(fig_pca); st.caption(f"Total varians dijelaskan: {pca.explained_variance_ratio_.sum()*100:.1f}%")
+                except Exception as e_pca: st.error(f"Gagal visualisasi PCA: {e_pca}")
+        else: st.warning("Data K-Means tidak dapat diproses.")
 
-                    fig_pca, ax_pca = plt.subplots(figsize=(10, 6))
-                    sns.scatterplot(
-                        x=pca_components[:, 0], y=pca_components[:, 1], hue=cluster_labels,
-                        palette=sns.color_palette("viridis", n_colors=k_optimal_input), ax=ax_pca, s=70, alpha=0.7, legend='full')
-                    ax_pca.scatter(
-                        pca_centroids[:, 0], pca_centroids[:, 1],
-                        marker='X', s=200, color='red', edgecolors='black', label='Centroids')
-                    
-                    ax_pca.set_xlabel(f"Principal Component 1 ({pca.explained_variance_ratio_[0]*100:.1f}% variance)")
-                    ax_pca.set_ylabel(f"Principal Component 2 ({pca.explained_variance_ratio_[1]*100:.1f}% variance)")
-                    ax_pca.set_title(f"Visualisasi Cluster K-Means (K={k_optimal_input}) dengan PCA")
-                    ax_pca.legend()
-                    st.pyplot(fig_pca)
-                    st.caption(f"Total varians yang dijelaskan oleh 2 Komponen Utama: {pca.explained_variance_ratio_.sum()*100:.1f}%")
-                except Exception as e_pca:
-                    st.error(f"Gagal membuat visualisasi PCA: {e_pca}")
-        else:
-            st.warning("Data untuk K-Means tidak dapat diproses.")
-
-
-    # --- Tab 3: Random Forest (Evaluasi Model) ---
     with tab_rf_eval:
         st.header("Evaluasi Model Prediksi Random Forest")
         st.markdown("Menilai performa model dalam memprediksi indikasi depresi dan gangguan tidur.")
-
         if X_rf_features is not None and y_rf_depresi is not None and y_rf_tidur is not None and preprocessor_rf_obj is not None:
-            rf_eval_targets = {
-                "Indikasi Depresi": y_rf_depresi,
-                "Indikasi Gangguan Tidur": y_rf_tidur
-            }
+            rf_eval_targets = {"Indikasi Depresi": y_rf_depresi, "Indikasi Gangguan Tidur": y_rf_tidur }
             for target_name_eval, y_target_eval in rf_eval_targets.items():
-                # (Isi evaluasi model RF sama seperti sebelumnya - tidak gue tulis ulang)
-                # Pastikan menggunakan X_rf_features dan y_target_eval
                 st.markdown("---"); st.subheader(f"Hasil Evaluasi untuk: {target_name_eval}")
                 if y_target_eval.nunique() < 2: st.warning(f"Target '{target_name_eval}' hanya satu kelas."); continue
                 if y_target_eval.isnull().any(): st.warning(f"Target '{target_name_eval}' punya missing values."); continue
@@ -323,83 +318,56 @@ else:
                     col_rf_metric, col_rf_cm = st.columns([1, 1])
                     with col_rf_metric: 
                         st.metric(label=f"Akurasi Model {target_name_eval}", value=f"{accuracy_score(y_test, y_pred_eval):.2%}"); 
-                        with st.expander("Laporan Klasifikasi Lengkap"):
-                                            st.text(classification_report(y_test, y_pred_eval, zero_division=0))
+                        with st.expander("Laporan Klasifikasi Lengkap"): st.text(classification_report(y_test, y_pred_eval, zero_division=0))
                     with col_rf_cm: 
                         fig_cm_rf, ax_cm_rf = plt.subplots(); cm_rf = confusion_matrix(y_test, y_pred_eval); sns.heatmap(cm_rf, annot=True, fmt='d', cmap='Blues' if "Depresi" in target_name_eval else 'Greens', ax=ax_cm_rf, xticklabels=model_pipeline_eval.classes_, yticklabels=model_pipeline_eval.classes_); ax_cm_rf.set_title(f'CM - {target_name_eval}'); ax_cm_rf.set_xlabel('Prediksi'); ax_cm_rf.set_ylabel('Aktual'); st.pyplot(fig_cm_rf)
                 except ValueError as ve_rf: st.error(f"ValueError model {target_name_eval}: {ve_rf}")
                 except Exception as e_model_rf: st.error(f"Error model {target_name_eval}: {e_model_rf}")
-        else:
-            st.warning("Data untuk evaluasi Random Forest tidak dapat diproses dengan pengaturan saat ini.")
+        else: st.warning("Data untuk evaluasi Random Forest tidak dapat diproses dengan pengaturan saat ini.")
             
-    # --- Tab 4: Coba Prediksi Sendiri ---
     with tab_prediction:
         st.header("🔮 Coba Prediksi Sendiri Status Kesehatan Mental")
         st.markdown("Masukkan data di bawah ini untuk mendapatkan prediksi berdasarkan model yang telah dilatih.")
-
         if X_rf_features is not None and y_rf_depresi is not None and y_rf_tidur is not None and preprocessor_rf_obj is not None and rf_feature_names_list is not None:
-            # Dapatkan daftar kategori unik dari data asli untuk selectbox
-            # Pastikan df_raw sudah di-load dan kolomnya sudah di-rename
-            gender_options = df_raw['Gender'].dropna().unique().tolist() if 'Gender' in df_raw else ["Male", "Female", "Others", "Prefer not to say"] # Fallback options
-            relationship_options = df_raw['Relationship_Status'].dropna().unique().tolist() if 'Relationship_Status' in df_raw else ["Single", "In a relationship", "Married", "Divorced"] # Fallback
+            gender_options = df_raw['Gender'].dropna().unique().tolist() if 'Gender' in df_raw else ["Male", "Female", "Others", "Prefer not to say"]
+            relationship_options = df_raw['Relationship_Status'].dropna().unique().tolist() if 'Relationship_Status' in df_raw else ["Single", "In a relationship", "Married", "Divorced"]
             time_options = ['Less than 1 hour', '1-2 hours', '2-3 hours', '3-4 hours', '4-5 hours', 'More than 5 hours']
-
             with st.form("prediction_form"):
                 st.markdown("**Masukkan Detail Anda:**")
-                
-                # Menggunakan 2 kolom untuk input form yang lebih rapi
                 col_form1, col_form2 = st.columns(2)
                 with col_form1:
                     age_input = st.number_input("Usia Anda:", min_value=10, max_value=100, value=25, step=1)
                     gender_input = st.selectbox("Jenis Kelamin:", options=gender_options, index=0)
                     relationship_input = st.selectbox("Status Hubungan:", options=relationship_options, index=0)
-                
                 with col_form2:
                     avg_time_input = st.selectbox("Rata-rata waktu di media sosial per hari:", options=time_options, index=0)
                     sm_no_purpose_input = st.slider("Seberapa sering menggunakan medsos tanpa tujuan spesifik? (1=Sangat Jarang, 5=Sangat Sering)", 1, 5, 3)
-
                 submit_button = st.form_submit_button(label="SUBMIT & PREDIKSI 🚀")
 
             if submit_button:
                 input_data_dict = {
-                    'Age': [age_input],
-                    'Gender': [gender_input],
-                    'Relationship_Status': [relationship_input],
-                    'Avg_Time_Social_Media': [avg_time_input],
-                    'SM_No_Purpose': [sm_no_purpose_input]
+                    'Age': [age_input], 'Gender': [gender_input], 'Relationship_Status': [relationship_input],
+                    'Avg_Time_Social_Media': [avg_time_input], 'SM_No_Purpose': [sm_no_purpose_input]
                 }
-                # Pastikan urutan kolom input_df sesuai dengan rf_feature_names_list
                 input_df = pd.DataFrame(input_data_dict, columns=rf_feature_names_list)
+                st.markdown("---"); st.subheader("Hasil Prediksi untuk Input Anda:")
                 
-                st.markdown("---")
-                st.subheader("Hasil Prediksi untuk Input Anda:")
-
-                # Prediksi Depresi
-                # Menggunakan X_rf_features dan y_rf_depresi untuk melatih/mendapatkan model
                 model_depresi_live = get_trained_rf_model(X_rf_features, y_rf_depresi, preprocessor_rf_obj, "Depresi (Live Prediction)")
                 if model_depresi_live:
-                    pred_depresi_live = model_depresi_live.predict(input_df)[0]
-                    proba_depresi_live = model_depresi_live.predict_proba(input_df)[0]
+                    pred_depresi_live = model_depresi_live.predict(input_df)[0]; proba_depresi_live = model_depresi_live.predict_proba(input_df)[0]
                     hasil_depresi_live = "Berisiko Tinggi 😢" if pred_depresi_live == 1 else "Berisiko Rendah 😊"
                     st.write(f"**Status Indikasi Depresi:** {hasil_depresi_live}")
                     st.progress(float(proba_depresi_live[1]), text=f"Probabilitas Berisiko Tinggi: {proba_depresi_live[1]:.0%}")
+                else: st.warning("Model prediksi depresi tidak siap.")
 
-                else:
-                    st.warning("Model prediksi depresi tidak siap. Pastikan analisis di tab Random Forest sudah berjalan.")
-
-                # Prediksi Gangguan Tidur
                 model_tidur_live = get_trained_rf_model(X_rf_features, y_rf_tidur, preprocessor_rf_obj, "Gangguan Tidur (Live Prediction)")
                 if model_tidur_live:
-                    pred_tidur_live = model_tidur_live.predict(input_df)[0]
-                    proba_tidur_live = model_tidur_live.predict_proba(input_df)[0]
+                    pred_tidur_live = model_tidur_live.predict(input_df)[0]; proba_tidur_live = model_tidur_live.predict_proba(input_df)[0]
                     hasil_tidur_live = "Berisiko Tinggi 😴" if pred_tidur_live == 1 else "Berisiko Rendah 🛌"
                     st.write(f"**Status Indikasi Gangguan Tidur:** {hasil_tidur_live}")
                     st.progress(float(proba_tidur_live[1]), text=f"Probabilitas Berisiko Tinggi: {proba_tidur_live[1]:.0%}")
-                else:
-                    st.warning("Model prediksi gangguan tidur tidak siap. Pastikan analisis di tab Random Forest sudah berjalan.")
-        else:
-            st.warning("Data atau komponen yang dibutuhkan untuk prediksi belum siap. Pastikan data telah dimuat dan diproses dengan benar.")
-
+                else: st.warning("Model prediksi gangguan tidur tidak siap.")
+        else: st.warning("Data atau komponen untuk prediksi belum siap.")
 
 st.sidebar.markdown("---")
 st.sidebar.caption("Dashboard Analisis oleh Kelompok 6")
