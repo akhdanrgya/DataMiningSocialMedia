@@ -321,16 +321,6 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=True): # exp
         col_viz1, col_viz2 = st.columns(2)
 
         # --- KODE UNTUK DIAGRAM 2 YANG SEBELUMNYA KOSONG, SEKARANG DIISI ---
-        with col_viz1:
-            st.markdown("**Diagram 2: Berdasarkan 2 Fitur Awal**")
-            fig_scatter, ax_scatter = plt.subplots(figsize=(8, 7))
-            sns.scatterplot(x=kmeans_scaled[:, 0], y=kmeans_scaled[:, 1], hue=labels, palette='viridis', s=50, alpha=0.7, ax=ax_scatter)
-            sns.scatterplot(x=centroids_scaled[:, 0], y=centroids_scaled[:, 1], marker='X', s=200, color='red', ax=ax_scatter, label='Centroids')
-            ax_scatter.set_title("Visualisasi Cluster (2 Fitur Awal)")
-            ax_scatter.set_xlabel(f"Scaled: {kolom_kmeans_final[0]}")
-            ax_scatter.set_ylabel(f"Scaled: {kolom_kmeans_final[1]}")
-            ax_scatter.legend()
-            st.pyplot(fig_scatter)
             
         with col_viz2:
             st.markdown("**Diagram 3: Berdasarkan PCA**")
@@ -354,7 +344,7 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=True): # exp
     st.subheader("3.2 Modeling Supervised: Naïve Bayes Classifier")
     st.markdown("Model Naïve Bayes dibangun untuk memprediksi **Indikasi Depresi** dan **Indikasi Gangguan Tidur**.")
     st.info("Hasil evaluasi detail dari model ini akan ditampilkan di tahap **Evaluation**.")
-    
+
 # ==============================================================================
 # TAHAP 4: EVALUATION
 # ==============================================================================
