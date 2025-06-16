@@ -233,7 +233,7 @@ def buat_nama_persona_otomatis(df_karakteristik_cluster, k_optimal):
 st.header("📈 Tahap 3: Modeling")
 st.markdown("Membangun model analitik untuk menemukan pola (K-Means) dan membuat prediksi (Naïve Bayes).")
 
-with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=True): # expanded=True agar defaultnya terbuka
+with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=False):
     st.subheader("3.1 Modeling Unsupervised: K-Means Clustering")
     st.markdown("Mengelompokkan responden ke dalam beberapa segmen (cluster) berdasarkan kemiripan pola perilaku dan gejala kesehatan mental mereka.")
     
@@ -322,7 +322,7 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=True): # exp
         pca = PCA(n_components=2, random_state=42)
         pca_components = pca.fit_transform(kmeans_scaled)
         pca_centroids = pca.transform(centroids_scaled)
-        
+
         fig_pca, ax_pca = plt.subplots(figsize=(8, 7))
         sns.scatterplot(x=pca_components[:, 0], y=pca_components[:, 1], hue=labels, palette='viridis', s=50, alpha=0.7, ax=ax_pca)
         sns.scatterplot(x=pca_centroids[:, 0], y=pca_centroids[:, 1], marker='X', s=200, color='red', ax=ax_pca, label='Centroids')
@@ -336,9 +336,78 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=True): # exp
         st.error(f"Terjadi error saat menjalankan K-Means Clustering: {e}")
     
     st.markdown("---")
-    st.subheader("3.2 Modeling Supervised: Naïve Bayes Classifier")
-    st.markdown("Model Naïve Bayes dibangun untuk memprediksi **Indikasi Depresi** dan **Indikasi Gangguan Tidur**.")
-    st.info("Hasil evaluasi detail dari model ini akan ditampilkan di tahap **Evaluation**.")
+
+    # --- Bagian Naive Bayes (Sekarang Termasuk Evaluasi) ---
+    st.subheader("3.2 Modeling & Evaluation Supervised: Naïve Bayes Classifier")
+    st.markdown("Membangun dan mengevaluasi model Naïve Bayes untuk memprediksi **Indikasi Depresi** dan **Indikasi Gangguan Tidur**.")
+
+    try:
+        # Mendefinisikan fitur dan preprocessor untuk Naive Bayes
+        fitur_nb_numerik = ['Age', 'SM_No_Purpose']
+        fitur_nb_kategori_nominal = ['Gender', 'Relationship_Status']
+        fitur_nb_kategori_ordinal = ['Avg_Time_Social_Media']
+        kolom_fitur_nb_gabungan = fitur_nb_numerik + fitur_nb_kategori_nominal + fitur_nb_kategori_ordinal
+        
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ('ord', OrdinalEncoder(categories=[time_categories_corrected]), fitur_nb_kategori_ordinal),
+                ('onehot', OneHotEncoder(handle_unknown='ignore')),
+                ('num', StandardScaler(), fitur_nb_numerik)],
+            remainder='drop')
+        
+        X = df[kolom_fitur_nb_gabungan]
+        targets_to_eval = {"Indikasi Depresi": df['Target_Depresi'], "Indikasi Gangguan Tidur": df['Target_Gangguan_Tidur']}
+
+        for name, y in targets_to_eval.items():
+            st.markdown(f"#### Hasil Evaluasi untuk: {name}")
+            
+            if y.nunique() < 2:
+                st.warning("Target hanya punya satu kelas (semua 0 atau semua 1). Model tidak dapat dievaluasi.")
+                continue
+            
+            # Split data, buat pipeline, dan latih model
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42, stratify=y)
+            model_pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', GaussianNB())])
+            model_pipeline.fit(X_train, y_train)
+            
+            # Dapatkan prediksi dan probabilitas
+            y_pred = model_pipeline.predict(X_test)
+            y_proba = model_pipeline.predict_proba(X_test)[:, 1]
+
+            # Menampilkan metrik dalam kolom
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Akurasi Model", f"{accuracy_score(y_test, y_pred):.2%}")
+                st.metric("Skor ROC-AUC", f"{roc_auc_score(y_test, y_proba):.4f}", help="Area di bawah Kurva ROC. Semakin mendekati 1, semakin baik model dalam membedakan kelas.")
+            
+            with col2:
+                # Plot Confusion Matrix
+                fig_cm, ax_cm = plt.subplots(figsize=(5, 4))
+                cm = confusion_matrix(y_test, y_pred)
+                sns.heatmap(cm, annot=True, fmt='d', ax=ax_cm, cmap='Blues')
+                ax_cm.set_title("Confusion Matrix")
+                ax_cm.set_xlabel('Prediksi'); ax_cm.set_ylabel('Aktual')
+                st.pyplot(fig_cm)
+            
+            # Laporan Klasifikasi dan Kurva ROC di bawah
+            with st.expander("Lihat Laporan Klasifikasi Lengkap dan Kurva ROC"):
+                col_report, col_roc = st.columns(2)
+                with col_report:
+                    st.text("Laporan Klasifikasi:")
+                    st.text(classification_report(y_test, y_pred, zero_division=0))
+                with col_roc:
+                    fig_roc, ax_roc = plt.subplots()
+                    fpr, tpr, _ = roc_curve(y_test, y_proba)
+                    ax_roc.plot(fpr, tpr, marker='.', label=f'Naïve Bayes (AUC = {roc_auc_score(y_test, y_proba):.2f})')
+                    ax_roc.plot([0, 1], [0, 1], linestyle='--', label='Garis Acak')
+                    ax_roc.set_title("Kurva ROC")
+                    ax_roc.set_xlabel('False Positive Rate'); ax_roc.set_ylabel('True Positive Rate')
+                    ax_roc.legend()
+                    st.pyplot(fig_roc)
+            st.markdown("---") # Pemisah antar target
+            
+    except Exception as e:
+        st.error(f"Terjadi error saat menjalankan modeling Naive Bayes: {e}")
 
 # ==============================================================================
 # TAHAP 4: EVALUATION
