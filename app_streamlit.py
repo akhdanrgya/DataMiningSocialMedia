@@ -8,7 +8,7 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder, OrdinalEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.cluster import KMeans
-from sklearn.linear_model import LogisticRegression  # DIUBAH DARI GaussianNB
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_curve, roc_auc_score
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
