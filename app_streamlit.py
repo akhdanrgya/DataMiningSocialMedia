@@ -348,6 +348,11 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=False):
         fitur_nb_kategori_ordinal = ['Avg_Time_Social_Media']
         kolom_fitur_nb_gabungan = fitur_nb_numerik + fitur_nb_kategori_nominal + fitur_nb_kategori_ordinal
         
+        # Asumsikan 'time_categories_corrected' sudah didefinisikan secara global
+        time_categories_corrected = [
+            'Less than an Hour', 'Between 1 and 2 hours', 'Between 2 and 3 hours', 
+            'Between 3 and 4 hours', 'Between 4 and 5 hours', 'More than 5 hours'
+        ]
         preprocessor = ColumnTransformer(
             transformers=[
                 ('ord', OrdinalEncoder(categories=[time_categories_corrected]), fitur_nb_kategori_ordinal),
@@ -361,63 +366,67 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=False):
         for name, y in targets_to_eval.items():
             st.markdown(f"#### Hasil Evaluasi untuk: {name}")
             
+            # Pengecekan awal pada keseluruhan data target
             if y.nunique() < 2:
                 st.warning("Data target hanya punya satu kelas. Model tidak dapat dilatih/dievaluasi.")
+                st.markdown("---")
                 continue
             
+            # Split data, buat pipeline, dan latih model
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42, stratify=y)
             model_pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', GaussianNB())])
             model_pipeline.fit(X_train, y_train)
             
             y_pred = model_pipeline.predict(X_test)
             
-            # Menampilkan Laporan Klasifikasi dan Metrik Utama
-            col_report, col_metrics = st.columns([2, 1])
-            with col_report:
-                st.text("Laporan Klasifikasi:")
-                st.text(classification_report(y_test, y_pred, zero_division=0))
-            with col_metrics:
+            # --- BAGIAN EVALUASI YANG DIROMBAK TOTAL ---
+            st.markdown("**Hasil Evaluasi Kinerja Model:**")
+            
+            # Menampilkan metrik dan visualisasi yang selalu bisa jalan
+            col1, col2 = st.columns(2)
+            with col1:
                 st.metric("Akurasi Model", f"{accuracy_score(y_test, y_pred):.2%}")
-                # --- PERBAIKAN FINAL DAN LEBIH AMAN ADA DI SINI ---
-                # Lakukan pengecekan keamanan untuk ROC-AUC SEBELUM mencoba menghitungnya
-                if y_test.nunique() > 1:
-                    y_proba = model_pipeline.predict_proba(X_test)[:, 1]
-                    auc_score = roc_auc_score(y_test, y_proba)
+                with st.expander("Lihat Laporan Klasifikasi Lengkap"):
+                    st.text(classification_report(y_test, y_pred, zero_division=0))
+            
+            with col2:
+                fig_cm, ax_cm = plt.subplots(figsize=(5, 4))
+                cm = confusion_matrix(y_test, y_pred)
+                sns.heatmap(cm, annot=True, fmt='d', ax=ax_cm, cmap='Greens')
+                ax_cm.set_title("Confusion Matrix")
+                ax_cm.set_xlabel('Prediksi'); ax_cm.set_ylabel('Aktual')
+                st.pyplot(fig_cm)
+
+            st.markdown("**Evaluasi ROC-AUC:**")
+            
+            # --- BLOK PENGAMANAN UTAMA ---
+            # Lakukan semua yang berhubungan dengan probabilitas HANYA JIKA data uji punya 2 kelas
+            if y_test.nunique() > 1:
+                # Jika aman, baru hitung probabilitas dan semuanya
+                y_proba = model_pipeline.predict_proba(X_test)[:, 1]
+                auc_score = roc_auc_score(y_test, y_proba)
+                fpr, tpr, _ = roc_curve(y_test, y_proba) # Sekarang 100% aman untuk di-unpack
+
+                col_roc_metric, col_roc_plot = st.columns(2)
+                with col_roc_metric:
                     st.metric("Skor ROC-AUC", f"{auc_score:.4f}", help="Area di Bawah Kurva ROC. Semakin mendekati 1, semakin baik.")
-                else:
-                    auc_score = None # Tandai bahwa AUC tidak tersedia
-                    st.metric("Skor ROC-AUC", "N/A", help="Tidak dapat dihitung karena data uji hanya berisi satu kelas.")
-
-            # Menampilkan Visualisasi Evaluasi
-            fig_eval, axes_eval = plt.subplots(1, 2, figsize=(12, 5))
-            
-            # Selalu tampilkan Confusion Matrix
-            cm = confusion_matrix(y_test, y_pred)
-            sns.heatmap(cm, annot=True, fmt='d', ax=axes_eval[0], cmap='Greens')
-            axes_eval[0].set_title("Confusion Matrix")
-            axes_eval[0].set_xlabel('Prediksi'); axes_eval[0].set_ylabel('Aktual')
-
-            # Tampilkan Kurva ROC HANYA JIKA memungkinkan (berdasarkan pengecekan di atas)
-            if auc_score is not None:
-                fpr, tpr, _ = roc_curve(y_test, y_proba) # Sekarang aman untuk di-unpack
-                axes_eval[1].plot(fpr, tpr, marker='.', label=f'AUC = {auc_score:.2f}')
-                axes_eval[1].plot([0, 1], [0, 1], linestyle='--', label='Garis Acak')
-                axes_eval[1].set_title("Kurva ROC (ROC Curve)")
+                with col_roc_plot:
+                    fig_roc, ax_roc = plt.subplots(figsize=(6, 5))
+                    ax_roc.plot(fpr, tpr, marker='.', label=f'Naïve Bayes (AUC = {auc_score:.2f})')
+                    ax_roc.plot([0, 1], [0, 1], linestyle='--', label='Garis Acak')
+                    ax_roc.set_title("Kurva ROC (ROC Curve)")
+                    ax_roc.set_xlabel('False Positive Rate'); ax_roc.set_ylabel('True Positive Rate')
+                    ax_roc.legend()
+                    st.pyplot(fig_roc)
             else:
-                axes_eval[1].text(0.5, 0.5, 'Kurva ROC tidak tersedia\n(Data uji hanya 1 kelas)',
-                                  horizontalalignment='center', verticalalignment='center',
-                                  fontsize=12, bbox=dict(facecolor='yellow', alpha=0.5))
-                axes_eval[1].set_title("Kurva ROC (ROC Curve)")
-            
-            axes_eval[1].set_xlabel('False Positive Rate'); axes_eval[1].set_ylabel('True Positive Rate')
-            axes_eval[1].legend(loc='lower right')
-            axes_eval[1].grid(True)
-            
-            st.pyplot(fig_eval)
+                # Jika hanya ada 1 kelas, tampilkan pesan peringatan yang jelas
+                st.warning("Skor ROC-AUC dan Kurva ROC tidak dapat dihitung/ditampilkan karena data uji (y_test) hanya berisi satu jenis kelas setelah pembagian data.")
+
             st.markdown("---") # Pemisah antar target
             
     except Exception as e:
         st.error(f"Terjadi error saat menjalankan modeling Naive Bayes: {e}")
+        st.error("Pastikan semua kolom fitur yang dibutuhkan ada di dalam data dan formatnya benar.")
 
 # ==============================================================================
 # TAHAP 4: EVALUATION
