@@ -284,12 +284,11 @@ else:
             # --- AKHIR BAGIAN PERSONA OTOMATIS ---
             
             st.markdown("---"); st.markdown("#### Visualisasi Cluster")
-            if st.checkbox("Tampilkan Visualisasi Cluster dengan PCA (2 Komponen)", value=False):
-                st.markdown("##### Plot Scatter: Hasil Reduksi Dimensi dengan PCA (2 Komponen Utama)")
-                try:
-                    pca = PCA(n_components=2, random_state=42); pca_components = pca.fit_transform(kmeans_scaled_data); pca_centroids = pca.transform(centroids_scaled)
-                    fig_pca, ax_pca = plt.subplots(figsize=(10, 6)); sns.scatterplot(x=pca_components[:, 0], y=pca_components[:, 1], hue=cluster_labels, palette=sns.color_palette("viridis", n_colors=k_optimal_input), ax=ax_pca, s=70, alpha=0.7, legend='full'); ax_pca.scatter(pca_centroids[:, 0], pca_centroids[:, 1], marker='X', s=200, color='red', edgecolors='black', label='Centroids'); ax_pca.set_xlabel(f"PC 1 ({pca.explained_variance_ratio_[0]*100:.1f}% var)"); ax_pca.set_ylabel(f"PC 2 ({pca.explained_variance_ratio_[1]*100:.1f}% var)"); ax_pca.set_title(f"Visualisasi Cluster K-Means (K={k_optimal_input}) dengan PCA"); ax_pca.legend(); st.pyplot(fig_pca); st.caption(f"Total varians dijelaskan: {pca.explained_variance_ratio_.sum()*100:.1f}%")
-                except Exception as e_pca: st.error(f"Gagal visualisasi PCA: {e_pca}")
+            st.markdown("##### Plot Scatter: Hasil Reduksi Dimensi dengan PCA (2 Komponen Utama)")
+            try:
+                pca = PCA(n_components=2, random_state=42); pca_components = pca.fit_transform(kmeans_scaled_data); pca_centroids = pca.transform(centroids_scaled)
+                fig_pca, ax_pca = plt.subplots(figsize=(10, 6)); sns.scatterplot(x=pca_components[:, 0], y=pca_components[:, 1], hue=cluster_labels, palette=sns.color_palette("viridis", n_colors=k_optimal_input), ax=ax_pca, s=70, alpha=0.7, legend='full'); ax_pca.scatter(pca_centroids[:, 0], pca_centroids[:, 1], marker='X', s=200, color='red', edgecolors='black', label='Centroids'); ax_pca.set_xlabel(f"PC 1 ({pca.explained_variance_ratio_[0]*100:.1f}% var)"); ax_pca.set_ylabel(f"PC 2 ({pca.explained_variance_ratio_[1]*100:.1f}% var)"); ax_pca.set_title(f"Visualisasi Cluster K-Means (K={k_optimal_input}) dengan PCA"); ax_pca.legend(); st.pyplot(fig_pca); st.caption(f"Total varians dijelaskan: {pca.explained_variance_ratio_.sum()*100:.1f}%")
+            except Exception as e_pca: st.error(f"Gagal visualisasi PCA: {e_pca}")
         else: st.warning("Data K-Means tidak dapat diproses.")
 
     with tab_rf_eval:
