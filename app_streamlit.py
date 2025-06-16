@@ -365,32 +365,15 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=False):
         for name, y in targets_to_eval.items():
             st.markdown(f"#### Hasil Evaluasi untuk: {name}")
             
-            # --- BLOK MATA-MATA (DEBUGGING) DIMULAI ---
-            st.warning(f"🕵️‍♂️ **LAPORAN INTELIJEN UNTUK '{name}'** 🕵️‍♂️")
-            
-            st.write(f"**Distribusi kelas di `y` (keseluruhan data target sebelum di-split):**")
-            st.code(y.value_counts())
-
-            # Pengecekan awal
             if y.nunique() < 2:
-                st.error("STOP: Data target hanya punya satu kelas. Model tidak dapat dilatih/dievaluasi.")
+                st.warning("Data target hanya punya satu kelas. Model tidak dapat dilatih/dievaluasi.")
                 st.markdown("---")
                 continue
             
-            # Split data
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42, stratify=y)
-            
-            st.write(f"**Distribusi kelas di `y_test` (data uji setelah di-split):**")
-            st.code(y_test.value_counts())
-            
-            st.write(f"**Hasil pengecekan `y_test.nunique()`:**")
-            st.code(f"Jumlah kelas unik di data uji (y_test) adalah: {y_test.nunique()}")
-            st.warning("--- AKHIR LAPORAN INTELIJEN ---")
-            # --- BLOK MATA-MATA (DEBUGGING) SELESAI ---
-
-            # Latih model
             model_pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', GaussianNB())])
             model_pipeline.fit(X_train, y_train)
+            
             y_pred = model_pipeline.predict(X_test)
             
             # Tampilkan metrik dasar
@@ -407,20 +390,33 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=False):
                     ax_cm.set_title("Confusion Matrix")
                     st.pyplot(fig_cm)
             
-            # --- BLOK PENGAMANAN ROC-AUC ---
             st.markdown("**Evaluasi ROC-AUC:**")
+            
+            # --- BLOK PENGAMANAN PALING AKHIR ---
             if y_test.nunique() > 1:
                 y_proba = model_pipeline.predict_proba(X_test)[:, 1]
                 auc_score = roc_auc_score(y_test, y_proba)
                 st.metric("Skor ROC-AUC", f"{auc_score:.4f}")
 
+                # Tampung hasil roc_curve dulu ke satu variabel
+                roc_output = roc_curve(y_test, y_proba)
+                
+                # Cek jumlah elemen yang dikembalikan sebelum di-unpack
+                if len(roc_output) == 3:
+                    fpr, tpr, _ = roc_output
+                else: # Jika ternyata cuma 2
+                    fpr, tpr = roc_output
+
+                # Plotting tetap aman
                 fig_roc, ax_roc = plt.subplots(figsize=(6, 5))
-                fpr, tpr, _ = roc_curve(y_test, y_proba)
                 ax_roc.plot(fpr, tpr, marker='.', label=f'AUC = {auc_score:.2f}')
-                ax_roc.plot([0, 1], [0, 1], linestyle='--'); ax_roc.set_title("Kurva ROC"); ax_roc.set_xlabel('FPR'); ax_roc.set_ylabel('TPR'); ax_roc.legend();
+                ax_roc.plot([0, 1], [0, 1], linestyle='--', label='Garis Acak')
+                ax_roc.set_title("Kurva ROC (ROC Curve)")
+                ax_roc.set_xlabel('False Positive Rate'); ax_roc.set_ylabel('True Positive Rate')
+                ax_roc.legend()
                 st.pyplot(fig_roc)
             else:
-                st.error("Analisis ROC-AUC dilewati karena data uji hanya berisi satu jenis kelas.")
+                st.warning("Skor ROC-AUC dan Kurva ROC tidak dapat ditampilkan karena data uji hanya berisi satu jenis kelas.")
 
             st.markdown("---")
             
