@@ -342,11 +342,16 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=False):
     st.markdown("Membangun dan mengevaluasi model Naïve Bayes untuk memprediksi **Indikasi Depresi** dan **Indikasi Gangguan Tidur**.")
 
     try:
-        # Mendefinisikan fitur dan preprocessor untuk Naive Bayes
+        # Mendefinisikan fitur dan preprocessor
         fitur_nb_numerik = ['Age', 'SM_No_Purpose']
         fitur_nb_kategori_nominal = ['Gender', 'Relationship_Status']
         fitur_nb_kategori_ordinal = ['Avg_Time_Social_Media']
         kolom_fitur_nb_gabungan = fitur_nb_numerik + fitur_nb_kategori_nominal + fitur_nb_kategori_ordinal
+        
+        time_categories_corrected = [
+            'Less than an Hour', 'Between 1 and 2 hours', 'Between 2 and 3 hours', 
+            'Between 3 and 4 hours', 'Between 4 and 5 hours', 'More than 5 hours'
+        ]
         
         preprocessor = ColumnTransformer(
             transformers=[
@@ -362,7 +367,7 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=False):
             st.markdown(f"#### Hasil Evaluasi untuk: {name}")
             
             if y.nunique() < 2:
-                st.warning("Target hanya punya satu kelas (semua 0 atau semua 1). Model tidak dapat dievaluasi.")
+                st.warning("Data target hanya punya satu kelas (semua 0 atau semua 1). Model tidak dapat dilatih/dievaluasi.")
                 continue
             
             # Split data, buat pipeline, dan latih model
@@ -370,7 +375,6 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=False):
             model_pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', GaussianNB())])
             model_pipeline.fit(X_train, y_train)
             
-            # Dapatkan prediksi dan probabilitas
             y_pred = model_pipeline.predict(X_test)
             y_proba = model_pipeline.predict_proba(X_test)[:, 1]
 
@@ -378,33 +382,39 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=False):
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("Akurasi Model", f"{accuracy_score(y_test, y_pred):.2%}")
-                st.metric("Skor ROC-AUC", f"{roc_auc_score(y_test, y_proba):.4f}", help="Area di bawah Kurva ROC. Semakin mendekati 1, semakin baik model dalam membedakan kelas.")
-            
+                # Pengecekan sebelum menghitung ROC-AUC
+                if y_test.nunique() > 1:
+                    st.metric("Skor ROC-AUC", f"{roc_auc_score(y_test, y_proba):.4f}", help="Area di bawah Kurva ROC. Semakin mendekati 1, semakin baik.")
+                else:
+                    st.metric("Skor ROC-AUC", "N/A", help="Tidak dapat dihitung karena data uji hanya berisi satu kelas.")
+
             with col2:
-                # Plot Confusion Matrix
                 fig_cm, ax_cm = plt.subplots(figsize=(5, 4))
                 cm = confusion_matrix(y_test, y_pred)
                 sns.heatmap(cm, annot=True, fmt='d', ax=ax_cm, cmap='Blues')
-                ax_cm.set_title("Confusion Matrix")
-                ax_cm.set_xlabel('Prediksi'); ax_cm.set_ylabel('Aktual')
+                ax_cm.set_title("Confusion Matrix"); ax_cm.set_xlabel('Prediksi'); ax_cm.set_ylabel('Aktual')
                 st.pyplot(fig_cm)
             
-            # Laporan Klasifikasi dan Kurva ROC di bawah
             with st.expander("Lihat Laporan Klasifikasi Lengkap dan Kurva ROC"):
                 col_report, col_roc = st.columns(2)
                 with col_report:
                     st.text("Laporan Klasifikasi:")
                     st.text(classification_report(y_test, y_pred, zero_division=0))
                 with col_roc:
-                    fig_roc, ax_roc = plt.subplots()
-                    fpr, tpr, _ = roc_curve(y_test, y_proba)
-                    ax_roc.plot(fpr, tpr, marker='.', label=f'Naïve Bayes (AUC = {roc_auc_score(y_test, y_proba):.2f})')
-                    ax_roc.plot([0, 1], [0, 1], linestyle='--', label='Garis Acak')
-                    ax_roc.set_title("Kurva ROC")
-                    ax_roc.set_xlabel('False Positive Rate'); ax_roc.set_ylabel('True Positive Rate')
-                    ax_roc.legend()
-                    st.pyplot(fig_roc)
-            st.markdown("---") # Pemisah antar target
+                    # --- PERBAIKAN DI SINI ---
+                    # Tambahkan pengecekan sebelum membuat plot Kurva ROC
+                    if y_test.nunique() > 1:
+                        fig_roc, ax_roc = plt.subplots()
+                        fpr, tpr, _ = roc_curve(y_test, y_proba)
+                        ax_roc.plot(fpr, tpr, marker='.', label=f'Naïve Bayes (AUC = {roc_auc_score(y_test, y_proba):.2f})')
+                        ax_roc.plot([0, 1], [0, 1], linestyle='--', label='Garis Acak')
+                        ax_roc.set_title("Kurva ROC")
+                        ax_roc.set_xlabel('False Positive Rate'); ax_roc.set_ylabel('True Positive Rate')
+                        ax_roc.legend()
+                        st.pyplot(fig_roc)
+                    else:
+                        st.warning("Kurva ROC tidak dapat ditampilkan karena data uji hanya berisi satu kelas.")
+            st.markdown("---")
             
     except Exception as e:
         st.error(f"Terjadi error saat menjalankan modeling Naive Bayes: {e}")
