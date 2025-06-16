@@ -284,9 +284,6 @@ else:
             # --- AKHIR BAGIAN PERSONA OTOMATIS ---
             
             st.markdown("---"); st.markdown("#### Visualisasi Cluster")
-            if len(kmeans_feature_names) >= 2:
-                st.markdown("##### Plot Scatter: 2 Fitur Awal (Scaled) dengan Centroid")
-                fig_scatter_basic, ax_scatter_basic = plt.subplots(figsize=(10,6)); sns.scatterplot(x=kmeans_scaled_data[:, 0], y=kmeans_scaled_data[:, 1], hue=cluster_labels, palette=sns.color_palette("viridis", n_colors=k_optimal_input), ax=ax_scatter_basic, s=70, alpha=0.7, legend='full'); ax_scatter_basic.scatter(centroids_scaled[:, 0], centroids_scaled[:, 1], marker='X', s=200, color='red', edgecolors='black', label='Centroids'); ax_scatter_basic.set_xlabel(f"Scaled: {kmeans_feature_names[0]}"); ax_scatter_basic.set_ylabel(f"Scaled: {kmeans_feature_names[1]}"); ax_cluster_scatter_title = f"Cluster K-Means (K={k_optimal_input}) - Fitur: '{kmeans_feature_names[0]}' vs '{kmeans_feature_names[1]}'"; ax_scatter_basic.set_title(ax_cluster_scatter_title); ax_scatter_basic.legend(); st.pyplot(fig_scatter_basic)
             if st.checkbox("Tampilkan Visualisasi Cluster dengan PCA (2 Komponen)", value=False):
                 st.markdown("##### Plot Scatter: Hasil Reduksi Dimensi dengan PCA (2 Komponen Utama)")
                 try:
