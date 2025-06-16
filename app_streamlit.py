@@ -131,28 +131,106 @@ st.markdown("Membangun model analitik untuk menemukan pola (K-Means) dan membuat
 
 with st.expander("Lihat Detail Tahap Modeling & Evaluasi"):
     st.subheader("3.1 Modeling Unsupervised: K-Means Clustering")
-    # Preprocessing untuk K-Means
-    kolom_kmeans_numerik = ['SM_No_Purpose', 'KMeans_Gangguan_Konsentrasi', 'KMeans_Pencarian_Validasi', 'Bothered_By_Worries']
-    df_kmeans_selection = df[kolom_kmeans_numerik + ['Avg_Time_Social_Media']].copy()
-    ordinal_encoder_kmeans = OrdinalEncoder(categories=[time_categories_corrected])
-    df_kmeans_selection['Avg_Time_Social_Media_Encoded'] = ordinal_encoder_kmeans.fit_transform(df_kmeans_selection[['Avg_Time_Social_Media']])
-    df_kmeans_processed = df_kmeans_selection.drop(columns=['Avg_Time_Social_Media'])
-    kolom_kmeans_final = ['Avg_Time_Social_Media_Encoded'] + kolom_kmeans_numerik
-    df_kmeans_processed = df_kmeans_processed[kolom_kmeans_final]
-    for col in kolom_kmeans_final:
-        if df_kmeans_processed[col].isnull().any():
-            df_kmeans_processed[col] = df_kmeans_processed[col].fillna(df_kmeans_processed[col].median())
-    scaler_kmeans = StandardScaler()
-    kmeans_scaled = scaler_kmeans.fit_transform(df_kmeans_processed)
-
-    # Menjalankan K-Means dan menampilkan hasilnya
-    kmeans = KMeans(n_clusters=k_optimal_input, random_state=42, n_init='auto')
-    labels = kmeans.fit_predict(kmeans_scaled)
-    centroids_df = pd.DataFrame(scaler_kmeans.inverse_transform(kmeans.cluster_centers_), columns=kolom_kmeans_final)
+    st.markdown("Mengelompokkan responden ke dalam beberapa segmen (cluster) berdasarkan kemiripan pola perilaku dan gejala kesehatan mental mereka.")
     
-    st.markdown("##### Karakteristik Rata-Rata per Cluster (Centroids)")
-    st.dataframe(centroids_df.style.highlight_max(axis=0, color='lightgreen').highlight_min(axis=0, color='pink'))
+    # Preprocessing untuk K-Means
+    # Asumsikan 'df' dan 'time_categories_corrected' sudah tersedia dari tahap sebelumnya
+    try:
+        kolom_kmeans_numerik = ['SM_No_Purpose', 'KMeans_Gangguan_Konsentrasi', 'KMeans_Pencarian_Validasi', 'Bothered_By_Worries']
+        df_kmeans_selection = df[kolom_kmeans_numerik + ['Avg_Time_Social_Media']].copy()
+        
+        ordinal_encoder_kmeans = OrdinalEncoder(categories=[time_categories_corrected])
+        df_kmeans_selection['Avg_Time_Social_Media_Encoded'] = ordinal_encoder_kmeans.fit_transform(df_kmeans_selection[['Avg_Time_Social_Media']])
+        
+        df_kmeans_processed = df_kmeans_selection.drop(columns=['Avg_Time_Social_Media'])
+        kolom_kmeans_final = ['Avg_Time_Social_Media_Encoded'] + kolom_kmeans_numerik
+        df_kmeans_processed = df_kmeans_processed[kolom_kmeans_final]
+        
+        for col in kolom_kmeans_final:
+            if df_kmeans_processed[col].isnull().any():
+                df_kmeans_processed[col] = df_kmeans_processed[col].fillna(df_kmeans_processed[col].median())
+        
+        scaler_kmeans = StandardScaler()
+        kmeans_scaled = scaler_kmeans.fit_transform(df_kmeans_processed)
+        
+        st.markdown("---")
+        
+        # --- DIAGRAM 1: ELBOW METHOD ---
+        st.markdown("##### Diagram 1: Elbow Method untuk Menentukan K Optimal")
+        st.caption("Diagram ini membantu kita memilih jumlah cluster (K) yang paling pas. Carilah titik 'siku' (elbow) di mana penurunan 'Inertia' mulai melandai.")
+        
+        col_elbow1, col_elbow2 = st.columns([2, 1])
+        with col_elbow1:
+            fig_elbow, ax_elbow = plt.subplots(figsize=(10, 6))
+            inertia = []
+            K_range = range(1, 11)
+            for k in K_range:
+                kmeans_elbow = KMeans(n_clusters=k, random_state=42, n_init='auto')
+                kmeans_elbow.fit(kmeans_scaled)
+                inertia.append(kmeans_elbow.inertia_)
+            ax_elbow.plot(K_range, inertia, marker='o', linestyle='--', color='b')
+            ax_elbow.set_xlabel('Jumlah Cluster (K)')
+            ax_elbow.set_ylabel('Inertia')
+            ax_elbow.set_title('Elbow Method')
+            ax_elbow.set_xticks(K_range)
+            ax_elbow.grid(True)
+            st.pyplot(fig_elbow)
+        with col_elbow2:
+            st.info(f"Anda memilih **K = {k_optimal_input}** cluster (lihat sidebar). Sesuaikan pilihan K di sidebar berdasarkan titik 'siku' pada plot di sebelah.")
 
+        st.markdown("---")
+        
+        # --- Menjalankan K-Means Final dan Menampilkan Karakteristik ---
+        st.markdown(f"##### Hasil Clustering dengan K={k_optimal_input}")
+        kmeans_final = KMeans(n_clusters=k_optimal_input, random_state=42, n_init='auto')
+        labels = kmeans_final.fit_predict(kmeans_scaled)
+        centroids_scaled = kmeans_final.cluster_centers_
+        
+        # Menghitung centroid dalam skala asli untuk interpretasi
+        centroids_original_scale = scaler_kmeans.inverse_transform(centroids_scaled)
+        centroids_df = pd.DataFrame(centroids_original_scale, columns=kolom_kmeans_final)
+        
+        st.markdown("**Karakteristik Rata-Rata per Cluster (Centroids)**")
+        st.dataframe(centroids_df.style.highlight_max(axis=0, color='lightgreen').highlight_min(axis=0, color='pink'))
+
+        st.markdown("---")
+        
+        # --- DIAGRAM 2 & 3: VISUALISASI CLUSTER ---
+        st.markdown("##### Diagram 2 & 3: Visualisasi Sebaran Cluster")
+        st.caption("Karena data cluster kita memiliki 5 dimensi, kita perlu memvisualisasikannya dalam 2D. Berikut adalah dua cara untuk melihatnya:")
+
+        col_viz1, col_viz2 = st.columns(2)
+        
+        # Visualisasi 1: 2 Fitur Pertama
+        with col_viz1:
+            st.markdown("**Diagram 2: Berdasarkan 2 Fitur Pertama**")
+            fig_scatter, ax_scatter = plt.subplots(figsize=(8, 7))
+            sns.scatterplot(x=kmeans_scaled[:, 0], y=kmeans_scaled[:, 1], hue=labels, palette='viridis', s=50, alpha=0.7, ax=ax_scatter)
+            sns.scatterplot(x=centroids_scaled[:, 0], y=centroids_scaled[:, 1], marker='X', s=200, color='red', ax=ax_scatter, label='Centroids')
+            ax_scatter.set_title("Visualisasi Cluster (2 Fitur Awal)")
+            ax_scatter.set_xlabel(f"Scaled: {kolom_kmeans_final[0]}")
+            ax_scatter.set_ylabel(f"Scaled: {kolom_kmeans_final[1]}")
+            ax_scatter.legend()
+            st.pyplot(fig_scatter)
+
+        # Visualisasi 2: Dengan PCA
+        with col_viz2:
+            st.markdown("**Diagram 3: Berdasarkan PCA**")
+            pca = PCA(n_components=2, random_state=42)
+            pca_components = pca.fit_transform(kmeans_scaled)
+            pca_centroids = pca.transform(centroids_scaled)
+
+            fig_pca, ax_pca = plt.subplots(figsize=(8, 7))
+            sns.scatterplot(x=pca_components[:, 0], y=pca_components[:, 1], hue=labels, palette='viridis', s=50, alpha=0.7, ax=ax_pca)
+            sns.scatterplot(x=pca_centroids[:, 0], y=pca_centroids[:, 1], marker='X', s=200, color='red', ax=ax_pca, label='Centroids')
+            ax_pca.set_title("Visualisasi Cluster (PCA)")
+            ax_pca.set_xlabel(f"Principal Component 1 ({pca.explained_variance_ratio_[0]:.1%})")
+            ax_pca.set_ylabel(f"Principal Component 2 ({pca.explained_variance_ratio_[1]:.1%})")
+            ax_pca.legend()
+            st.pyplot(fig_pca)
+
+    except Exception as e:
+        st.error(f"Terjadi error saat menjalankan K-Means Clustering: {e}")
     st.subheader("3.2 Modeling Supervised: Naïve Bayes Classifier")
     st.markdown("Model Naïve Bayes dibangun untuk memprediksi **Indikasi Depresi** dan **Indikasi Gangguan Tidur**.")
     st.info("Hasil evaluasi detail dari model ini akan ditampilkan di tahap **Evaluation**.")
