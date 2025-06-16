@@ -8,7 +8,7 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder, OrdinalEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.cluster import KMeans
-from sklearn.naive_bayes import GaussianNB
+from sklearn.linear_model import LogisticRegression  # DIUBAH DARI GaussianNB
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_curve, roc_auc_score
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
@@ -245,7 +245,7 @@ def buat_nama_persona_otomatis(df_karakteristik_cluster, k_optimal):
     return personas
 
 st.header("📈 Tahap 3: Modeling")
-st.markdown("Membangun model analitik untuk menemukan pola (K-Means) dan membuat prediksi (Naïve Bayes).")
+st.markdown("Membangun model analitik untuk menemukan pola (K-Means) dan membuat prediksi (Logistic Regression).")
 
 with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=False):
     st.subheader("3.1 Modeling Unsupervised: K-Means Clustering")
@@ -422,11 +422,11 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=False):
 # ==============================================================================
 # TAHAP 4: EVALUATION
 # ==============================================================================
-st.header("✅ Tahap 4: Evaluation Supervised ( Naïve Bayes Classifier)")
+st.header("✅ Tahap 4: Evaluation Supervised (Logistic Regression Classifier)")
 st.markdown("Mengevaluasi performa dan ketepatan model untuk memastikan model memenuhi tujuan.")
 
 with st.expander("Lihat Detail Tahap Evaluation"):
-    # Mendefinisikan fitur dan preprocessor untuk Naive Bayes
+    # Mendefinisikan fitur dan preprocessor untuk Logistic Regression
     fitur_nb_numerik = ['Age', 'SM_No_Purpose']
     fitur_nb_kategori_nominal = ['Gender', 'Relationship_Status']
     fitur_nb_kategori_ordinal = ['Avg_Time_Social_Media']
@@ -447,7 +447,8 @@ with st.expander("Lihat Detail Tahap Evaluation"):
         if y.nunique() < 2: st.warning("Target hanya punya satu kelas."); continue
             
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42, stratify=y)
-        model_pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', GaussianNB())])
+        # DIUBAH DI SINI
+        model_pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', LogisticRegression(random_state=42))])
         model_pipeline.fit(X_train, y_train)
         y_pred = model_pipeline.predict(X_test)
         y_proba = model_pipeline.predict_proba(X_test)[:, 1]
@@ -477,7 +478,7 @@ with st.expander("Lihat Detail Tahap Evaluation"):
         axes_eval[1].legend()
         st.pyplot(fig_eval)
 
-        # Analisis Variabel Penting (Proxy untuk Naive Bayes)
+        # Analisis Variabel Penting (Proxy untuk Logistic Regression)
         st.markdown("**Analisis Variabel Penting**")
         
         df_eval = X_test.copy()
@@ -553,15 +554,16 @@ if submit_spesialis:
             'SM_Compare_Success': [compare_success], 'SM_Seek_Validation': [seek_validation],
             'SM_No_Purpose': [no_purpose]
         })
-        
+
         preprocessor_depresi = ColumnTransformer(
             transformers=[
                 ('ord', OrdinalEncoder(categories=[time_categories_corrected]), fitur_depresi_ordinal),
                 ('num', StandardScaler(), fitur_depresi_numerik)
             ], remainder='drop'
         )
+
         
-        pipeline_depresi = Pipeline(steps=[('preprocessor', preprocessor_depresi), ('classifier', CalibratedClassifierCV(GaussianNB(), method='isotonic', cv=5))])
+        pipeline_depresi = Pipeline(steps=[('preprocessor', preprocessor_depresi), ('classifier', CalibratedClassifierCV(LogisticRegression(random_state=42), method='isotonic', cv=5))])
         pipeline_depresi.fit(df[kolom_fitur_depresi], df['Target_Depresi'])
         pred_d = pipeline_depresi.predict(input_df_depresi[kolom_fitur_depresi])[0]
         proba_d = pipeline_depresi.predict_proba(input_df_depresi[kolom_fitur_depresi])[0]
@@ -598,7 +600,8 @@ if submit_spesialis:
             ], remainder='drop'
         )
 
-        pipeline_tidur = Pipeline(steps=[('preprocessor', preprocessor_tidur), ('classifier', CalibratedClassifierCV(GaussianNB(), method='isotonic', cv=5))])
+        # DIUBAH DI SINI
+        pipeline_tidur = Pipeline(steps=[('preprocessor', preprocessor_tidur), ('classifier', CalibratedClassifierCV(LogisticRegression(random_state=42), method='isotonic', cv=5))])
         pipeline_tidur.fit(df[kolom_fitur_tidur], df['Target_Gangguan_Tidur'])
         pred_t = pipeline_tidur.predict(input_df_tidur[kolom_fitur_tidur])[0]
         proba_t = pipeline_tidur.predict_proba(input_df_tidur[kolom_fitur_tidur])[0]
