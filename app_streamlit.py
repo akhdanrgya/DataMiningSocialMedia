@@ -168,23 +168,85 @@ with st.expander("Lihat Detail Tahap Data Preparation"):
     - **Encoding & Scaling**: Proses mengubah data kategori menjadi angka (Encoding) dan menyamakan skala fitur (Scaling) adalah langkah krusial. Untuk menjaga integritas evaluasi model, proses ini **sengaja tidak dilakukan di sini**, melainkan akan **dilakukan nanti di dalam _pipeline_ model** pada Tahap Modeling. Ini adalah praktek terbaik untuk mencegah _data leakage_.
     """)
 
-    
+
 # ==============================================================================
 # TAHAP 3: MODELING
 # ==============================================================================
+
+# --- FUNGSI BARU UNTUK PERSONA OTOMATIS (Taruh di bagian atas file) ---
+def interpretasi_nilai_fitur(nama_fitur, nilai):
+    """Helper function untuk mengkategorikan nilai fitur jadi Rendah, Sedang, Tinggi."""
+    if nama_fitur == 'Avg_Time_Social_Media_Encoded': 
+        if nilai <= 1.5: return "Rendah (Jarang/Singkat)"
+        elif nilai <= 3.0: return "Sedang"
+        else: return "Tinggi (Sering/Lama)"
+    elif nama_fitur in ['SM_No_Purpose', 'KMeans_Gangguan_Konsentrasi', 'KMeans_Pencarian_Validasi', 'Bothered_By_Worries']:
+        if nilai <= 2.3: return "Rendah"
+        elif nilai <= 3.7: return "Sedang"
+        else: return "Tinggi"
+    return f"{nilai:.2f}" 
+
+def buat_nama_persona_otomatis(df_karakteristik_cluster, k_optimal):
+    personas = []
+    for i in range(k_optimal):
+        if i not in df_karakteristik_cluster.index:
+            continue
+        cluster_data = df_karakteristik_cluster.loc[i]
+        
+        waktu_medsos_val = cluster_data.get('Avg_Time_Social_Media_Encoded', 0)
+        gangguan_fokus_val = cluster_data.get('KMeans_Gangguan_Konsentrasi', 0)
+        cemas_val = cluster_data.get('Bothered_By_Worries', 0)
+        cari_validasi_val = cluster_data.get('KMeans_Pencarian_Validasi', 0)
+
+        waktu_medsos = interpretasi_nilai_fitur('Avg_Time_Social_Media_Encoded', waktu_medsos_val)
+        gangguan_fokus = interpretasi_nilai_fitur('KMeans_Gangguan_Konsentrasi', gangguan_fokus_val)
+        cemas = interpretasi_nilai_fitur('Bothered_By_Worries', cemas_val)
+        cari_validasi = interpretasi_nilai_fitur('KMeans_Pencarian_Validasi', cari_validasi_val)
+        
+        nama_persona = f"Cluster {i}: Tipe Pengguna Default"
+        interpretasi_singkat = "Profil umum, perlu analisis manual lebih detail."
+
+        if "Tinggi" in waktu_medsos and "Tinggi" in gangguan_fokus and "Tinggi" in cemas:
+            nama_persona = f"Cluster {i}: 📱⚡️ Si Aktif Gelisah"
+            interpretasi_singkat = "Sangat aktif di medsos, namun juga mengalami gangguan fokus dan kecemasan tinggi."
+        elif "Rendah" in waktu_medsos and "Rendah" in gangguan_fokus and "Rendah" in cemas:
+            nama_persona = f"Cluster {i}: 🧘💻 Si Bijak Medsos"
+            interpretasi_singkat = "Penggunaan medsos terkontrol dengan dampak minimal pada fokus dan kecemasan."
+        elif "Tinggi" in cari_validasi:
+             nama_persona = f"Cluster {i}: 👍🤳 Si Pencari Pengakuan"
+             interpretasi_singkat = "Fokus utama pada pencarian validasi di medsos, dengan aktivitas sedang-hingga-tinggi."
+        
+        ciri_khas_list = [
+            f"Waktu di Medsos: **{waktu_medsos}**",
+            f"Gangguan Konsentrasi: **{gangguan_fokus}**",
+            f"Pencarian Validasi: **{cari_validasi}**",
+            f"Tingkat Kecemasan: **{cemas}**"
+        ]
+        
+        personas.append({
+            "nama_persona": nama_persona,
+            "ciri_khas": "\n".join([f"- {c}" for c in ciri_khas_list]),
+            "interpretasi_singkat": interpretasi_singkat
+        })
+    return personas
+
 st.header("📈 Tahap 3: Modeling")
 st.markdown("Membangun model analitik untuk menemukan pola (K-Means) dan membuat prediksi (Naïve Bayes).")
 
-with st.expander("Lihat Detail Tahap Modeling & Evaluasi"):
+with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=True): # expanded=True agar defaultnya terbuka
     st.subheader("3.1 Modeling Unsupervised: K-Means Clustering")
     st.markdown("Mengelompokkan responden ke dalam beberapa segmen (cluster) berdasarkan kemiripan pola perilaku dan gejala kesehatan mental mereka.")
     
     # Preprocessing untuk K-Means
-    # Asumsikan 'df' dan 'time_categories_corrected' sudah tersedia dari tahap sebelumnya
     try:
         kolom_kmeans_numerik = ['SM_No_Purpose', 'KMeans_Gangguan_Konsentrasi', 'KMeans_Pencarian_Validasi', 'Bothered_By_Worries']
         df_kmeans_selection = df[kolom_kmeans_numerik + ['Avg_Time_Social_Media']].copy()
         
+        # Asumsikan 'time_categories_corrected' sudah didefinisikan secara global
+        time_categories_corrected = [
+            'Less than an Hour', 'Between 1 and 2 hours', 'Between 2 and 3 hours', 
+            'Between 3 and 4 hours', 'Between 4 and 5 hours', 'More than 5 hours'
+        ]
         ordinal_encoder_kmeans = OrdinalEncoder(categories=[time_categories_corrected])
         df_kmeans_selection['Avg_Time_Social_Media_Encoded'] = ordinal_encoder_kmeans.fit_transform(df_kmeans_selection[['Avg_Time_Social_Media']])
         
@@ -215,11 +277,8 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi"):
                 kmeans_elbow.fit(kmeans_scaled)
                 inertia.append(kmeans_elbow.inertia_)
             ax_elbow.plot(K_range, inertia, marker='o', linestyle='--', color='b')
-            ax_elbow.set_xlabel('Jumlah Cluster (K)')
-            ax_elbow.set_ylabel('Inertia')
-            ax_elbow.set_title('Elbow Method')
-            ax_elbow.set_xticks(K_range)
-            ax_elbow.grid(True)
+            ax_elbow.set_xlabel('Jumlah Cluster (K)'); ax_elbow.set_ylabel('Inertia')
+            ax_elbow.set_title('Elbow Method'); ax_elbow.set_xticks(K_range); ax_elbow.grid(True)
             st.pyplot(fig_elbow)
         with col_elbow2:
             st.info(f"Anda memilih **K = {k_optimal_input}** cluster (lihat sidebar). Sesuaikan pilihan K di sidebar berdasarkan titik 'siku' pada plot di sebelah.")
@@ -232,13 +291,27 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi"):
         labels = kmeans_final.fit_predict(kmeans_scaled)
         centroids_scaled = kmeans_final.cluster_centers_
         
-        # Menghitung centroid dalam skala asli untuk interpretasi
         centroids_original_scale = scaler_kmeans.inverse_transform(centroids_scaled)
         centroids_df = pd.DataFrame(centroids_original_scale, columns=kolom_kmeans_final)
         
         st.markdown("**Karakteristik Rata-Rata per Cluster (Centroids)**")
         st.dataframe(centroids_df.style.highlight_max(axis=0, color='lightgreen').highlight_min(axis=0, color='pink'))
 
+        # --- PENAMBAHAN BAGIAN PERSONA OTOMATIS ---
+        st.markdown("---")
+        st.subheader("🤖 Saran Persona Otomatis untuk Tiap Cluster")
+        st.caption("Nama dan interpretasi di bawah ini dibuat otomatis berdasarkan aturan sederhana. Interpretasi manual Anda tetap yang utama!")
+
+        saran_personas = buat_nama_persona_otomatis(centroids_df, k_optimal_input)
+
+        for persona in saran_personas:
+            with st.container(border=True):
+                st.markdown(f"#### {persona['nama_persona']}")
+                st.markdown("**Ciri Khas Utama (Level Rendah/Sedang/Tinggi):**")
+                st.markdown(persona['ciri_khas'])
+                st.markdown("**Interpretasi Singkat (Saran Otomatis):**")
+                st.markdown(f"> _{persona['interpretasi_singkat']}_")
+        
         st.markdown("---")
         
         # --- DIAGRAM 2 & 3: VISUALISASI CLUSTER ---
@@ -247,7 +320,18 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi"):
 
         col_viz1, col_viz2 = st.columns(2)
 
-        # Visualisasi 2: Dengan PCA
+        # --- KODE UNTUK DIAGRAM 2 YANG SEBELUMNYA KOSONG, SEKARANG DIISI ---
+        with col_viz1:
+            st.markdown("**Diagram 2: Berdasarkan 2 Fitur Awal**")
+            fig_scatter, ax_scatter = plt.subplots(figsize=(8, 7))
+            sns.scatterplot(x=kmeans_scaled[:, 0], y=kmeans_scaled[:, 1], hue=labels, palette='viridis', s=50, alpha=0.7, ax=ax_scatter)
+            sns.scatterplot(x=centroids_scaled[:, 0], y=centroids_scaled[:, 1], marker='X', s=200, color='red', ax=ax_scatter, label='Centroids')
+            ax_scatter.set_title("Visualisasi Cluster (2 Fitur Awal)")
+            ax_scatter.set_xlabel(f"Scaled: {kolom_kmeans_final[0]}")
+            ax_scatter.set_ylabel(f"Scaled: {kolom_kmeans_final[1]}")
+            ax_scatter.legend()
+            st.pyplot(fig_scatter)
+            
         with col_viz2:
             st.markdown("**Diagram 3: Berdasarkan PCA**")
             pca = PCA(n_components=2, random_state=42)
@@ -258,17 +342,19 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi"):
             sns.scatterplot(x=pca_components[:, 0], y=pca_components[:, 1], hue=labels, palette='viridis', s=50, alpha=0.7, ax=ax_pca)
             sns.scatterplot(x=pca_centroids[:, 0], y=pca_centroids[:, 1], marker='X', s=200, color='red', ax=ax_pca, label='Centroids')
             ax_pca.set_title("Visualisasi Cluster (PCA)")
-            ax_pca.set_xlabel(f"Principal Component 1 ({pca.explained_variance_ratio_[0]:.1%})")
-            ax_pca.set_ylabel(f"Principal Component 2 ({pca.explained_variance_ratio_[1]:.1%})")
+            ax_pca.set_xlabel(f"PC 1 ({pca.explained_variance_ratio_[0]:.1%})")
+            ax_pca.set_ylabel(f"PC 2 ({pca.explained_variance_ratio_[1]:.1%})")
             ax_pca.legend()
             st.pyplot(fig_pca)
 
     except Exception as e:
         st.error(f"Terjadi error saat menjalankan K-Means Clustering: {e}")
+    
+    st.markdown("---")
     st.subheader("3.2 Modeling Supervised: Naïve Bayes Classifier")
     st.markdown("Model Naïve Bayes dibangun untuk memprediksi **Indikasi Depresi** dan **Indikasi Gangguan Tidur**.")
     st.info("Hasil evaluasi detail dari model ini akan ditampilkan di tahap **Evaluation**.")
-
+    
 # ==============================================================================
 # TAHAP 4: EVALUATION
 # ==============================================================================
