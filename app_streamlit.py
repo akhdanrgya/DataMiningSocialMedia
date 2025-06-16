@@ -318,24 +318,19 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=True): # exp
         st.markdown("##### Diagram 2 & 3: Visualisasi Sebaran Cluster")
         st.caption("Karena data cluster kita memiliki 5 dimensi, kita perlu memvisualisasikannya dalam 2D. Berikut adalah dua cara untuk melihatnya:")
 
-        col_viz1, col_viz2 = st.columns(2)
-
-        # --- KODE UNTUK DIAGRAM 2 YANG SEBELUMNYA KOSONG, SEKARANG DIISI ---
-            
-        with col_viz2:
-            st.markdown("**Diagram 3: Berdasarkan PCA**")
-            pca = PCA(n_components=2, random_state=42)
-            pca_components = pca.fit_transform(kmeans_scaled)
-            pca_centroids = pca.transform(centroids_scaled)
-
-            fig_pca, ax_pca = plt.subplots(figsize=(8, 7))
-            sns.scatterplot(x=pca_components[:, 0], y=pca_components[:, 1], hue=labels, palette='viridis', s=50, alpha=0.7, ax=ax_pca)
-            sns.scatterplot(x=pca_centroids[:, 0], y=pca_centroids[:, 1], marker='X', s=200, color='red', ax=ax_pca, label='Centroids')
-            ax_pca.set_title("Visualisasi Cluster (PCA)")
-            ax_pca.set_xlabel(f"PC 1 ({pca.explained_variance_ratio_[0]:.1%})")
-            ax_pca.set_ylabel(f"PC 2 ({pca.explained_variance_ratio_[1]:.1%})")
-            ax_pca.legend()
-            st.pyplot(fig_pca)
+        st.markdown("**Diagram 3: Berdasarkan PCA**")
+        pca = PCA(n_components=2, random_state=42)
+        pca_components = pca.fit_transform(kmeans_scaled)
+        pca_centroids = pca.transform(centroids_scaled)
+        
+        fig_pca, ax_pca = plt.subplots(figsize=(8, 7))
+        sns.scatterplot(x=pca_components[:, 0], y=pca_components[:, 1], hue=labels, palette='viridis', s=50, alpha=0.7, ax=ax_pca)
+        sns.scatterplot(x=pca_centroids[:, 0], y=pca_centroids[:, 1], marker='X', s=200, color='red', ax=ax_pca, label='Centroids')
+        ax_pca.set_title("Visualisasi Cluster (PCA)")
+        ax_pca.set_xlabel(f"PC 1 ({pca.explained_variance_ratio_[0]:.1%})")
+        ax_pca.set_ylabel(f"PC 2 ({pca.explained_variance_ratio_[1]:.1%})")
+        ax_pca.legend()
+        st.pyplot(fig_pca)
 
     except Exception as e:
         st.error(f"Terjadi error saat menjalankan K-Means Clustering: {e}")
