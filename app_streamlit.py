@@ -11,6 +11,9 @@ from sklearn.cluster import KMeans
 from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_curve, roc_auc_score
 from sklearn.decomposition import PCA
+from sklearn.metrics import silhouette_score
+from sklearn.metrics import silhouette_samples
+from sklearn.calibration import CalibratedClassifierCV
 
 # --- 2. Konfigurasi Halaman & Fungsi Helper ---
 st.set_page_config(page_title="Dashboard Analisis Mental Health", layout="wide")
@@ -44,7 +47,7 @@ def load_data(file_path='smmh.csv'):
         return None
 
 # --- Judul Utama Aplikasi ---
-st.title("📊 Dashboard Analisis: Media Sosial & Kesehatan Mental")
+st.title("Dashboard Analisis: Media Sosial & Kesehatan Mental")
 st.markdown("Sebuah dashboard interaktif yang mengikuti kerangka **CRISP-DM** untuk menganalisis data survei.")
 
 # --- Load Data di Awal ---
@@ -76,25 +79,37 @@ with st.expander("Lihat Detail Tahap Data Understanding"):
         axes[1].set_ylabel('')
     st.pyplot(fig)
 
-    st.subheader("Analisis Korelasi dengan Heatmap")
-    st.markdown("Heatmap ini membantu kita melihat hubungan antar variabel numerik. Semakin mendekati 1 (merah) atau -1 (biru), semakin kuat hubungannya.")
-    
-    # Persiapan data untuk korelasi
-    kolom_numerik_corr = ['Age', 'SM_No_Purpose', 'SM_Distraction_Busy', 'Easily_Distracted', 'Bothered_By_Worries', 'Difficult_To_Concentrate', 'SM_Compare_Success', 'SM_Seek_Validation', 'Feel_Depressed', 'Interest_Fluctuation', 'Sleep_Issues']
-    kolom_ordinal_corr = ['Avg_Time_Social_Media']
-    kolom_valid_numerik = [col for col in kolom_numerik_corr if col in df.columns]
-    kolom_valid_ordinal = [col for col in kolom_ordinal_corr if col in df.columns]
-    df_corr = df[kolom_valid_numerik + kolom_valid_ordinal].copy()
-    
-    time_categories_corrected = ['Less than an Hour', 'Between 1 and 2 hours', 'Between 2 and 3 hours', 'Between 3 and 4 hours', 'Between 4 and 5 hours', 'More than 5 hours']
-    ordinal_encoder = OrdinalEncoder(categories=[time_categories_corrected])
-    df_corr['Avg_Time_Social_Media_Encoded'] = ordinal_encoder.fit_transform(df_corr[['Avg_Time_Social_Media']])
-    df_corr_final = df_corr.drop(columns=['Avg_Time_Social_Media'])
-    
-    correlation_matrix = df_corr_final.corr()
-    
-    fig, ax = plt.subplots(figsize=(16, 12))
-    sns.heatmap(correlation_matrix, annot=True, fmt=".2f", cmap='coolwarm', linewidths=.5, ax=ax)
+    st.subheader("Analisis Korelasi dengan Heatmap (Semua Variabel)")
+    st.markdown("Heatmap ini mencakup semua variabel yang relevan. Variabel non-numerik (seperti Gender) diubah menjadi angka untuk dianalisis.")
+
+    # Bikin salinan dataframe biar aman
+    df_corr_all = df.copy()
+
+    # Looping ke setiap kolom di dataframe
+    for col in df_corr_all.columns:
+        # Cek apakah tipe data kolom BUKAN angka (int/float)
+        if df_corr_all[col].dtype not in ['int64', 'float64']:
+            # Jika kolomnya adalah 'Avg_Time_Social_Media', kita pakai OrdinalEncoder
+            if col == 'Avg_Time_Social_Media':
+                time_categories_corrected = [
+                    'Less than an Hour', 'Between 1 and 2 hours', 'Between 2 and 3 hours', 
+                    'Between 3 and 4 hours', 'Between 4 and 5 hours', 'More than 5 hours'
+                ]
+                ordinal_encoder = OrdinalEncoder(categories=[time_categories_corrected])
+                df_corr_all[col] = ordinal_encoder.fit_transform(df_corr_all[[col]])
+            # Untuk kolom teks lainnya, kita ubah jadi angka dengan pd.factorize
+            else:
+                df_corr_all[col] = pd.factorize(df_corr_all[col])[0]
+
+    # Setelah semua kolom jadi numerik, hitung korelasinya
+    correlation_matrix_all = df_corr_all.corr()
+
+    # Buat heatmap yang lebih besar untuk menampung semua variabel
+    fig, ax = plt.subplots(figsize=(20, 18))
+    sns.heatmap(correlation_matrix_all, annot=True, fmt=".2f", cmap='coolwarm', linewidths=.5, ax=ax, annot_kws={"size": 10})
+    plt.title('Heatmap Korelasi Semua Variabel', fontsize=20)
+    plt.xticks(rotation=45, ha='right')
+    plt.yticks(rotation=0)
     st.pyplot(fig)
 
 # ==============================================================================
@@ -173,7 +188,6 @@ with st.expander("Lihat Detail Tahap Data Preparation"):
 # TAHAP 3: MODELING
 # ==============================================================================
 
-# --- FUNGSI BARU UNTUK PERSONA OTOMATIS (Taruh di bagian atas file) ---
 def interpretasi_nilai_fitur(nama_fitur, nilai):
     """Helper function untuk mengkategorikan nilai fitur jadi Rendah, Sedang, Tinggi."""
     if nama_fitur == 'Avg_Time_Social_Media_Encoded': 
@@ -296,6 +310,73 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=False):
         
         st.markdown("**Karakteristik Rata-Rata per Cluster (Centroids)**")
         st.dataframe(centroids_df.style.highlight_max(axis=0, color='lightgreen').highlight_min(axis=0, color='pink'))
+        
+
+        st.markdown("##### Analisis Silhouette K-Means")
+
+        # 1. Prediksi label cluster & hitung silhouette score rata-rata
+        labels = kmeans_final.fit_predict(kmeans_scaled)
+        sil_score = silhouette_score(kmeans_scaled, labels)
+
+        # Tampilkan score rata-rata dengan st.metric
+        st.metric(
+            "Silhouette Score (Rata-rata)", 
+            f"{sil_score:.4f}", 
+            help="Skor rata-rata untuk semua cluster. Semakin mendekati 1, semakin baik."
+        )
+
+        # 2. Buat Diagram Silhouette
+        st.markdown("Lihat Diagram Silhouette Detail per Cluster")
+        # Buat figure untuk plot
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Hitung silhouette score untuk setiap sample/data
+        sample_silhouette_values = silhouette_samples(kmeans_scaled, labels)
+        
+        y_lower = 10
+        n_clusters = kmeans_final.n_clusters
+        for i in range(n_clusters):
+            # Ambil silhouette score untuk cluster ke-i dan urutkan
+            ith_cluster_silhouette_values = sample_silhouette_values[labels == i]
+            ith_cluster_silhouette_values.sort()
+            
+            # Tentukan ukuran dan posisi y untuk plot cluster ke-i
+            size_cluster_i = ith_cluster_silhouette_values.shape[0]
+            y_upper = y_lower + size_cluster_i
+            
+            # Warna untuk cluster
+            color = plt.cm.viridis(float(i) / n_clusters)
+            
+            # Gambar silhouette-nya
+            ax.fill_betweenx(
+                np.arange(y_lower, y_upper),
+                0,
+                ith_cluster_silhouette_values,
+                facecolor=color,
+                edgecolor=color,
+                alpha=0.7,
+            )
+            
+            # Beri label nomor cluster di tengah plot-nya
+            ax.text(-0.1, y_lower + 0.5 * size_cluster_i, str(i), fontsize=12)
+            
+            # Update y_lower untuk cluster berikutnya
+            y_lower = y_upper + 10  # kasih jarak 10
+        # Atur Tampilan Plot
+        ax.set_title("Diagram Silhouette untuk Setiap Cluster", fontsize=16)
+        ax.set_xlabel("Nilai Koefisien Silhouette", fontsize=12)
+        ax.set_ylabel("Label Cluster", fontsize=12)
+        
+        # Garis vertikal untuk menandai rata-rata silhouette score
+        ax.axvline(x=sil_score, color="red", linestyle="--", label='Rata-rata Silhouette Score')
+        ax.legend()
+        
+        ax.set_yticks([])  # Hapus y-axis ticks
+        ax.set_xticks([-0.2, 0, 0.2, 0.4, 0.6, 0.8, 1])
+        plt.grid(axis='x', linestyle='--', alpha=0.6)
+        
+        # Tampilkan plot di Streamlit
+        st.pyplot(fig)
 
         # --- PENAMBAHAN BAGIAN PERSONA OTOMATIS ---
         st.markdown("---")
@@ -337,97 +418,11 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi", expanded=False):
     
     st.markdown("---")
 
-    # --- Bagian Naive Bayes (Sekarang Termasuk Evaluasi) ---
-    st.subheader("3.2 Modeling & Evaluation Supervised: Naïve Bayes Classifier")
-    st.markdown("Membangun dan mengevaluasi model Naïve Bayes untuk memprediksi **Indikasi Depresi** dan **Indikasi Gangguan Tidur**.")
-
-    try:
-        # Mendefinisikan fitur dan preprocessor (tetap sama)
-        fitur_nb_numerik = ['Age', 'SM_No_Purpose']
-        fitur_nb_kategori_nominal = ['Gender', 'Relationship_Status']
-        fitur_nb_kategori_ordinal = ['Avg_Time_Social_Media']
-        kolom_fitur_nb_gabungan = fitur_nb_numerik + fitur_nb_kategori_nominal + fitur_nb_kategori_ordinal
-        
-        time_categories_corrected = [
-            'Less than an Hour', 'Between 1 and 2 hours', 'Between 2 and 3 hours', 
-            'Between 3 and 4 hours', 'Between 4 and 5 hours', 'More than 5 hours'
-        ]
-        preprocessor = ColumnTransformer(
-            transformers=[
-                ('ord', OrdinalEncoder(categories=[time_categories_corrected]), fitur_nb_kategori_ordinal),
-                ('onehot', OneHotEncoder(handle_unknown='ignore')),
-                ('num', StandardScaler(), fitur_nb_numerik)],
-            remainder='drop')
-        
-        X = df[kolom_fitur_nb_gabungan]
-        targets_to_eval = {"Indikasi Depresi": df['Target_Depresi'], "Indikasi Gangguan Tidur": df['Target_Gangguan_Tidur']}
-
-        for name, y in targets_to_eval.items():
-            st.markdown(f"#### Hasil Evaluasi untuk: {name}")
-            
-            if y.nunique() < 2:
-                st.warning("Data target hanya punya satu kelas. Model tidak dapat dilatih/dievaluasi.")
-                st.markdown("---")
-                continue
-            
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42, stratify=y)
-            model_pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', GaussianNB())])
-            model_pipeline.fit(X_train, y_train)
-            
-            y_pred = model_pipeline.predict(X_test)
-            
-            # Tampilkan metrik dasar
-            st.metric("Akurasi Model", f"{accuracy_score(y_test, y_pred):.2%}")
-            with st.expander("Lihat Laporan Klasifikasi & Confusion Matrix"):
-                col_report, col_cm = st.columns(2)
-                with col_report:
-                    st.text("Laporan Klasifikasi:")
-                    st.text(classification_report(y_test, y_pred, zero_division=0))
-                with col_cm:
-                    fig_cm, ax_cm = plt.subplots(figsize=(5, 4))
-                    cm = confusion_matrix(y_test, y_pred)
-                    sns.heatmap(cm, annot=True, fmt='d', ax=ax_cm, cmap='Blues')
-                    ax_cm.set_title("Confusion Matrix")
-                    st.pyplot(fig_cm)
-            
-            st.markdown("**Evaluasi ROC-AUC:**")
-            
-            # --- BLOK PENGAMANAN PALING AKHIR ---
-            if y_test.nunique() > 1:
-                y_proba = model_pipeline.predict_proba(X_test)[:, 1]
-                auc_score = roc_auc_score(y_test, y_proba)
-                st.metric("Skor ROC-AUC", f"{auc_score:.4f}")
-
-                # Tampung hasil roc_curve dulu ke satu variabel
-                roc_output = roc_curve(y_test, y_proba)
-                
-                # Cek jumlah elemen yang dikembalikan sebelum di-unpack
-                if len(roc_output) == 3:
-                    fpr, tpr, _ = roc_output
-                else: # Jika ternyata cuma 2
-                    fpr, tpr = roc_output
-
-                # Plotting tetap aman
-                fig_roc, ax_roc = plt.subplots(figsize=(6, 5))
-                ax_roc.plot(fpr, tpr, marker='.', label=f'AUC = {auc_score:.2f}')
-                ax_roc.plot([0, 1], [0, 1], linestyle='--', label='Garis Acak')
-                ax_roc.set_title("Kurva ROC (ROC Curve)")
-                ax_roc.set_xlabel('False Positive Rate'); ax_roc.set_ylabel('True Positive Rate')
-                ax_roc.legend()
-                st.pyplot(fig_roc)
-            else:
-                st.warning("Skor ROC-AUC dan Kurva ROC tidak dapat ditampilkan karena data uji hanya berisi satu jenis kelas.")
-
-            st.markdown("---")
-            
-    except Exception as e:
-        st.error(f"Terjadi error saat menjalankan modeling Naive Bayes: {e}")
-
 
 # ==============================================================================
 # TAHAP 4: EVALUATION
 # ==============================================================================
-st.header("✅ Tahap 4: Evaluation")
+st.header("✅ Tahap 4: Evaluation Supervised ( Naïve Bayes Classifier)")
 st.markdown("Mengevaluasi performa dan ketepatan model untuk memastikan model memenuhi tujuan.")
 
 with st.expander("Lihat Detail Tahap Evaluation"):
@@ -483,8 +478,7 @@ with st.expander("Lihat Detail Tahap Evaluation"):
         st.pyplot(fig_eval)
 
         # Analisis Variabel Penting (Proxy untuk Naive Bayes)
-        st.markdown("**Analisis Variabel Penting (Proxy)**")
-        st.info("Karena Naïve Bayes tidak memiliki `feature_importances_` seperti Random Forest, kita melihat 'kepentingan' variabel dengan cara membandingkan distribusinya terhadap kelas target.")
+        st.markdown("**Analisis Variabel Penting**")
         
         df_eval = X_test.copy()
         df_eval['Target'] = y_test
@@ -501,61 +495,105 @@ with st.expander("Lihat Detail Tahap Evaluation"):
 
 
 # ==============================================================================
-# TAHAP 5: DEPLOYMENT
+# TAHAP 5: DEPLOYMENT (VERSI FITUR TERBAIK DARI HEATMAP)
 # ==============================================================================
 st.header("🚀 Tahap 5: Deployment")
 st.markdown("""
-Tahap akhir dari CRISP-DM adalah _deployment_, di mana hasil dari analisis dan model diterapkan untuk digunakan oleh pengguna. **Dashboard interaktif ini adalah bentuk dari deployment tersebut.**
-
-Di bawah ini adalah fitur prediksi interaktif yang menggunakan model **Naïve Bayes** yang telah dilatih untuk memberikan prediksi secara _real-time_ berdasarkan input dari pengguna.
+Tahap akhir dari CRISP-DM adalah _deployment_. Di bawah ini adalah fitur prediksi interaktif yang menggunakan fitur-fitur terbaik berdasarkan analisis korelasi untuk meningkatkan akurasi Naïve Bayes.
 """)
 
-with st.form("prediction_form"):
-    st.subheader("🔮 Coba Prediksi Sendiri")
-    col1, col2 = st.columns(2)
-    age = col1.number_input("Usia Anda:", 10, 100, 25, 1)
+# --- BAGIAN 1: MODIFIKASI FORM INPUT ---
+with st.form("prediction_form_v2"):
+    st.subheader("🔮 Coba Prediksi Sendiri (Versi Fitur Terbaik)")
+    
+    # Kita buat 3 kolom biar rapi
+    col1, col2, col3 = st.columns(3)
+    
+    # Input yang sudah ada sebelumnya
+    age = col1.number_input("Usia Anda:", 10, 100, 21, 1)
     gender = col2.selectbox("Jenis Kelamin:", df['Gender'].unique())
-    relationship = col1.selectbox("Status Hubungan:", df['Relationship_Status'].unique())
-    time = col2.selectbox("Rata-rata waktu di medsos per hari:", time_categories_corrected)
-    no_purpose = st.slider("Seberapa sering menggunakan medsos tanpa tujuan? (1-5)", 1, 5, 3)
-    submit = st.form_submit_button("Dapatkan Prediksi")
+    time = col3.selectbox("Rata-rata waktu di medsos per hari:", time_categories_corrected, index=5)
+    
+    st.markdown("---")
+    
+    # --- TAMBAHKAN INPUT BARU UNTUK FITUR JAGOAN KITA ---
+    st.markdown("**Jawab Pertanyaan Berikut (Skala 1-5):**")
+    bothered = st.slider("Seberapa sering Anda terganggu oleh rasa cemas/khawatir (Bothered by Worries)?", 1, 5, 3)
+    interest_fluct = st.slider("Seberapa sering minat Anda pada aktivitas harian berfluktuasi (Interest Fluctuation)?", 1, 5, 3)
+    difficult_concentrate = st.slider("Seberapa sulit Anda untuk berkonsentrasi pada sesuatu (Difficult to Concentrate)?", 1, 5, 3)
+    
+    submit_v2 = st.form_submit_button("Dapatkan Prediksi Akurat")
 
-if submit:
+# --- BAGIAN 2: LOGIKA PREDIKSI DENGAN FITUR TERBAIK ---
+if submit_v2:
+    
+    fitur_terbaik_numerik = [
+        'Bothered_By_Worries',      
+        'Interest_Fluctuation',     
+        'Difficult_To_Concentrate', 
+        'Age'                       
+    ]
+    fitur_terbaik_kategori_ordinal = ['Avg_Time_Social_Media']
+    fitur_terbaik_kategori_nominal = ['Gender']
+    
+    kolom_fitur_terbaik_gabungan = fitur_terbaik_numerik + fitur_terbaik_kategori_ordinal + fitur_terbaik_kategori_nominal
+
+    # Buat dataframe dari input form yang BARU
     input_df = pd.DataFrame({
-        'Age': [age], 'Gender': [gender], 'Relationship_Status': [relationship],
-        'Avg_Time_Social_Media': [time], 'SM_No_Purpose': [no_purpose]
-    }, columns=kolom_fitur_nb_gabungan)
-    
-    st.subheader("Hasil Prediksi Anda:")
-    
-    # Melatih ulang model dengan data lengkap untuk prediksi final
-    X_full = df[kolom_fitur_nb_gabungan]
-    y_depresi_full = df['Target_Depresi']
-    y_tidur_full = df['Target_Gangguan_Tidur']
-    
-    # Prediksi Depresi
-    model_depresi = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', GaussianNB())]); model_depresi.fit(X_full, y_depresi_full)
-    pred_d = model_depresi.predict(input_df)[0]; proba_d = model_depresi.predict_proba(input_df)[0]
-    hasil_d = "Berisiko Tinggi 😢" if pred_d == 1 else "Berisiko Rendah 😊"
-    st.write(f"**Indikasi Depresi:** {hasil_d}")
-    st.progress(float(proba_d[1]), text=f"Probabilitas Berisiko Tinggi: {proba_d[1]:.0%}")
+        'Age': [age],
+        'Gender': [gender],
+        'Avg_Time_Social_Media': [time],
+        'Bothered_By_Worries': [bothered],
+        'Interest_Fluctuation': [interest_fluct],
+        'Difficult_To_Concentrate': [difficult_concentrate]
+    })
 
-    # Prediksi Gangguan Tidur
-    model_tidur = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', GaussianNB())]); model_tidur.fit(X_full, y_tidur_full)
-    pred_t = model_tidur.predict(input_df)[0]; proba_t = model_tidur.predict_proba(input_df)[0]
-    hasil_t = "Berisiko Tinggi 😴" if pred_t == 1 else "Berisiko Rendah 🛌"
-    st.write(f"**Indikasi Gangguan Tidur:** {hasil_t}")
-    st.progress(float(proba_t[1]), text=f"Probabilitas Berisiko Tinggi: {proba_t[1]:.0%}")
+    # Buat preprocessor yang sesuai dengan fitur BARU
+    preprocessor_terbaik = ColumnTransformer(
+        transformers=[
+            ('ord', OrdinalEncoder(categories=[time_categories_corrected]), fitur_terbaik_kategori_ordinal),
+            ('onehot', OneHotEncoder(handle_unknown='ignore'), fitur_terbaik_kategori_nominal),
+            ('num', StandardScaler(), fitur_terbaik_numerik)
+        ],
+        remainder='drop' # Kita hanya pakai fitur yang sudah dipilih
+    )
+    
+    st.subheader("Hasil Prediksi Anda (dengan Fitur Pilihan):")
 
-    with st.expander("Bagaimana Cara Kerja Prediksi Naïve Bayes? (Penjelasan Peluang)"):
-        st.markdown("""
-        Model Naïve Bayes bekerja berdasarkan **Teorema Bayes**. Secara sederhana, untuk memprediksi apakah Anda 'Berisiko' atau 'Tidak', model menghitung dua probabilitas:
-        1.  P(Berisiko | Input Anda) : Peluang Anda **berisiko**, *mengingat* data input (usia, gender, dll.) yang Anda berikan.
-        2.  P(Tidak Berisiko | Input Anda) : Peluang Anda **tidak berisiko**, *mengingat* data input yang Anda berikan.
+    # --- Blok Prediksi Depresi ---
+    st.markdown("**Indikasi Depresi:**")
+    base_model_d = GaussianNB()
+    calibrated_model_d = CalibratedClassifierCV(base_model_d, method='isotonic', cv=5)
+    pipeline_depresi = Pipeline(steps=[('preprocessor', preprocessor_terbaik), ('classifier', calibrated_model_d)])
+    
+    pipeline_depresi.fit(df[kolom_fitur_terbaik_gabungan], df['Target_Depresi'])
+    
+    pred_d = pipeline_depresi.predict(input_df[kolom_fitur_terbaik_gabungan])[0]
+    proba_d = pipeline_depresi.predict_proba(input_df[kolom_fitur_terbaik_gabungan])[0]
+    
+    if pred_d == 1:
+        hasil_d, prob_value_d, prob_text_d = "Berisiko Tinggi 😢", proba_d[1], f"Probabilitas Berisiko Tinggi: {proba_d[1]:.1%}"
+    else:
+        hasil_d, prob_value_d, prob_text_d = "Berisiko Rendah 😊", proba_d[0], f"Probabilitas Berisiko Rendah: {proba_d[0]:.1%}"
         
-        Model kemudian akan memilih kelas dengan probabilitas tertinggi. Probabilitas ini dihitung dengan mengalikan probabilitas dari masing-masing fitur Anda. Contohnya (sangat disederhanakan):
+    st.write(f"Hasil: **{hasil_d}**")
+    st.progress(float(prob_value_d), text=prob_text_d)
+    
+    # --- Blok Prediksi Gangguan Tidur ---
+    st.markdown("**Indikasi Gangguan Tidur:**")
+    base_model_t = GaussianNB()
+    calibrated_model_t = CalibratedClassifierCV(base_model_t, method='isotonic', cv=5)
+    pipeline_tidur = Pipeline(steps=[('preprocessor', preprocessor_terbaik), ('classifier', calibrated_model_t)])
+    
+    pipeline_tidur.fit(df[kolom_fitur_terbaik_gabungan], df['Target_Gangguan_Tidur'])
+    
+    pred_t = pipeline_tidur.predict(input_df[kolom_fitur_terbaik_gabungan])[0]
+    proba_t = pipeline_tidur.predict_proba(input_df[kolom_fitur_terbaik_gabungan])[0]
+    
+    if pred_t == 1:
+        hasil_t, prob_value_t, prob_text_t = "Berisiko Tinggi 😴", proba_t[1], f"Probabilitas Berisiko Tinggi: {proba_t[1]:.1%}"
+    else:
+        hasil_t, prob_value_t, prob_text_t = "Berisiko Rendah 🛌", proba_t[0], f"Probabilitas Berisiko Rendah: {proba_t[0]:.1%}"
         
-        *P(Berisiko | Input) ~ P(Usia=25 | Berisiko) x P(Gender=Pria | Berisiko) x P(Waktu=Lama | Berisiko) x P(Berisiko)*
-        
-        Setiap komponen probabilitas ini (seperti *P(Usia=25 | Berisiko)*) "dipelajari" oleh model dari data latih yang sudah ada.
-        """)
+    st.write(f"Hasil: **{hasil_t}**")
+    st.progress(float(prob_value_t), text=prob_text_t)
