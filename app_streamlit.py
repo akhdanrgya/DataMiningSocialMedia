@@ -101,9 +101,9 @@ with st.expander("Lihat Detail Tahap Data Understanding"):
 # TAHAP 2: DATA PREPARATION
 # ==============================================================================
 st.header("🛠️ Tahap 2: Data Preparation")
-st.markdown("Membersihkan dan menyiapkan data untuk diolah oleh model analitik.")
+st.markdown("Membersihkan, mentransformasi, dan menyiapkan data agar siap untuk diolah oleh model analitik.")
 
-# --- Sidebar untuk Input Kontrol ---
+# --- Sidebar untuk Input Kontrol (tetap sama) ---
 st.sidebar.header("⚙️ Pengaturan Model")
 k_optimal_input = st.sidebar.number_input("Pilih Jumlah Cluster (K)", 2, 10, 3, 1)
 depression_threshold = st.sidebar.slider("Threshold 'Depresi' (Skor >= Threshold → Ya)", 1, 5, 4, 1)
@@ -116,13 +116,59 @@ df['Target_Depresi'] = df['Feel_Depressed'].apply(lambda x: 1 if x >= depression
 df['Target_Gangguan_Tidur'] = df['Sleep_Issues'].apply(lambda x: 1 if x >= sleep_threshold else 0)
 
 with st.expander("Lihat Detail Tahap Data Preparation"):
+    st.markdown("#### 1. Feature Engineering")
     st.markdown("""
-    1.  **Feature Engineering**: Membuat fitur `KMeans_Gangguan_Konsentrasi` dan `KMeans_Pencarian_Validasi` dengan merata-ratakan beberapa pertanyaan terkait untuk mendapatkan skor yang lebih representatif.
-    2.  **Binarisasi Target**: Mengubah variabel target (`Feel_Depressed`, `Sleep_Issues`) menjadi biner (0 atau 1) berdasarkan threshold yang dipilih di sidebar. Ini diperlukan untuk model klasifikasi.
-    3.  **Encoding & Scaling**: Proses ini akan dilakukan di dalam pipeline model untuk memastikan konsistensi antara data latih dan data baru.
+    - **Tujuan**: Membuat fitur baru yang lebih representatif.
+    - **Aksi**:
+        - `KMeans_Gangguan_Konsentrasi`: Dibuat dengan merata-ratakan skor dari 3 pertanyaan terkait gangguan konsentrasi.
+        - `KMeans_Pencarian_Validasi`: Dibuat dengan merata-ratakan skor dari 2 pertanyaan terkait pencarian validasi.
     """)
-    st.dataframe(df[['KMeans_Gangguan_Konsentrasi', 'KMeans_Pencarian_Validasi', 'Target_Depresi', 'Target_Gangguan_Tidur']].head())
+    st.dataframe(df[['KMeans_Gangguan_Konsentrasi', 'KMeans_Pencarian_Validasi']].head())
+    
+    st.markdown("---")
 
+    st.markdown("#### 2. Deteksi Missing Value")
+    st.markdown("Mengecek apakah ada data yang hilang di setiap kolom.")
+    
+    missing_values = df.isnull().sum()
+    missing_percentage = (missing_values / len(df)) * 100
+    missing_df = pd.DataFrame({'Jumlah Missing': missing_values, 'Persentase (%)': missing_percentage})
+    
+    # Hanya tampilkan kolom yang punya missing value
+    missing_df_filtered = missing_df[missing_df['Jumlah Missing'] > 0]
+    
+    if missing_df_filtered.empty:
+        st.success("✅ Tidak ditemukan missing value pada data.")
+    else:
+        st.warning("Ditemukan missing value pada kolom berikut:")
+        st.dataframe(missing_df_filtered.sort_values(by='Jumlah Missing', ascending=False))
+        st.caption("Catatan: Di tahap modeling nanti, missing value pada fitur numerik (jika ada) akan diisi dengan nilai median kolom tersebut.")
+
+    st.markdown("---")
+
+    st.markdown("#### 3. Deteksi Outlier")
+    st.markdown("""
+    Outlier adalah data yang nilainya jauh berbeda dari sebagian besar data lainnya. Kita bisa mendeteksinya menggunakan **Box Plot**. Titik-titik yang berada di luar "pagar" (garis whisker) pada plot di bawah ini dianggap sebagai outlier.
+    """)
+    
+    # Pilih fitur-fitur kunci yang numerik untuk dideteksi outliernya
+    kolom_outlier = ['Age', 'KMeans_Gangguan_Konsentrasi', 'KMeans_Pencarian_Validasi', 'Bothered_By_Worries']
+    
+    fig, ax = plt.subplots(figsize=(15, 7))
+    sns.boxplot(data=df[kolom_outlier], orient='h', palette='Set2', ax=ax)
+    ax.set_title('Deteksi Outlier pada Fitur-fitur Kunci', fontsize=16, fontweight='bold')
+    st.pyplot(fig)
+    st.caption("Catatan: Keberadaan outlier perlu diwaspadai, namun tidak selalu harus dihapus. Terkadang outlier memberikan informasi yang unik. Dalam proyek ini, kita tidak menghapus outlier.")
+
+    st.markdown("---")
+    
+    st.markdown("#### 4. Transformasi Data Lainnya")
+    st.markdown("""
+    - **Binarisasi Target**: Mengubah variabel target (`Feel_Depressed`, `Sleep_Issues`) menjadi biner (0 atau 1) berdasarkan _threshold_ yang dipilih di sidebar. Ini diperlukan untuk model klasifikasi.
+    - **Encoding & Scaling**: Proses mengubah data kategori menjadi angka (Encoding) dan menyamakan skala fitur (Scaling) adalah langkah krusial. Untuk menjaga integritas evaluasi model, proses ini **sengaja tidak dilakukan di sini**, melainkan akan **dilakukan nanti di dalam _pipeline_ model** pada Tahap Modeling. Ini adalah praktek terbaik untuk mencegah _data leakage_.
+    """)
+
+    
 # ==============================================================================
 # TAHAP 3: MODELING
 # ==============================================================================
@@ -200,18 +246,6 @@ with st.expander("Lihat Detail Tahap Modeling & Evaluasi"):
         st.caption("Karena data cluster kita memiliki 5 dimensi, kita perlu memvisualisasikannya dalam 2D. Berikut adalah dua cara untuk melihatnya:")
 
         col_viz1, col_viz2 = st.columns(2)
-        
-        # Visualisasi 1: 2 Fitur Pertama
-        with col_viz1:
-            st.markdown("**Diagram 2: Berdasarkan 2 Fitur Pertama**")
-            fig_scatter, ax_scatter = plt.subplots(figsize=(8, 7))
-            sns.scatterplot(x=kmeans_scaled[:, 0], y=kmeans_scaled[:, 1], hue=labels, palette='viridis', s=50, alpha=0.7, ax=ax_scatter)
-            sns.scatterplot(x=centroids_scaled[:, 0], y=centroids_scaled[:, 1], marker='X', s=200, color='red', ax=ax_scatter, label='Centroids')
-            ax_scatter.set_title("Visualisasi Cluster (2 Fitur Awal)")
-            ax_scatter.set_xlabel(f"Scaled: {kolom_kmeans_final[0]}")
-            ax_scatter.set_ylabel(f"Scaled: {kolom_kmeans_final[1]}")
-            ax_scatter.legend()
-            st.pyplot(fig_scatter)
 
         # Visualisasi 2: Dengan PCA
         with col_viz2:
